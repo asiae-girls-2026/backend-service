@@ -1,0 +1,12 @@
+# 로컬: http://localhost 로 들어오면 api로 넘김
+# AWS: 첫 줄을 도메인으로 바꾸면 Caddy가 HTTPS 인증서를 자동 발급함
+#   예) api.carepong.example.com {
+:80 {
+    handle /model/* {
+        uri strip_prefix /model
+        reverse_proxy model:8001
+    }
+    handle {
+        reverse_proxy api:8000
+    }
+}
