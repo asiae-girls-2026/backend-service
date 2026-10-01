@@ -1,5 +1,5 @@
 # 케어퐁 서버 — 상자 4개를 한 번에 켜는 설정
-# 실행: docker compose up --build
+# 실행 (저장소 루트에서): docker compose -f infra/docker-compose.yml up --build
 # 끄기: docker compose down        (DB 데이터 유지)
 #       docker compose down -v     (DB 데이터까지 삭제)
 
@@ -18,7 +18,7 @@ services:
 
   # ② 메인 API (FastAPI) — 약·루틴·펫·완화·설정
   api:
-    build: ./api
+    build: ../api
     environment:
       DATABASE_URL: postgresql+psycopg://carepong:carepong@db:5432/carepong
       DATA_GO_KR_KEY: ${DATA_GO_KR_KEY:-}
@@ -29,7 +29,7 @@ services:
 
   # ③ 모델 API (FastAPI) — 지금은 목 응답. DA 모델 받으면 여기만 채움
   model:
-    build: ./model
+    build: ../model
     ports:
       - "8001:8001"
 
