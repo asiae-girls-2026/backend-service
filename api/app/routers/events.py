@@ -20,7 +20,8 @@ EVENTS_1ST = {
     "collector_toggle", "beta_upload", "water_goal_changed",
     "level_up", "rename", "rebirth",
     "collector_stopped", "inference_error",
-    "tab_opened",   # TA 제안(Q32): 미니홈 탭 진입 {tab: mind|archive|settings} — 탭 이용 빈도용. 채원 표 확정 대기
+    "tab_opened",          # TA 제안(Q32): 미니홈 탭 진입 {tab: mind|archive|settings} — 탭 이용 빈도용
+    "furniture_unlocked",  # 연우 G2 검증용 {stage: 1~9}. 하트는 이벤트 없음 — chat_message 수에서 산출, 누적은 putPet 스냅샷
 }
 
 class AppEvent(BaseModel):
