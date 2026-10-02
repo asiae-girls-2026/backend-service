@@ -23,5 +23,5 @@ pyinstaller --onefile --noconsole --name collector collector.py
 → `dist/collector.exe`. Electron 에서 `spawn(path.join(process.resourcesPath, "collector.exe"))` 후 stdout 줄 단위 파싱.
 
 ## pillymon 과의 차이
-- SnDoubleClicked / SnDragged: pillymon 은 항상 0 이었음. 여기선 0.4초 내 재클릭 / 20px 이상 드래그로 집계 (DA 확인 필요 — 시트 Q35)
+- SnDoubleClicked / SnDragged: pillymon(SWELL)은 항상 0 이었지만 여기선 0.4초 내 재클릭 / 20px 이상 드래그로 실측 (혜윤 확정 10/2, Q35: 0 고정 금지 — 1차 실측 분포로 2차 재학습 보정)
 - 활동 0 창도 출력한다 (서버 정책이 자리비움 판단에 씀)
