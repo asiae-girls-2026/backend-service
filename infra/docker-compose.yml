@@ -19,6 +19,7 @@ services:
   # ② 메인 API (FastAPI) — 약·루틴·펫·완화·설정
   api:
     build: ../api
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]   # 로컬 자동 리로드. AWS에선 이 줄 삭제
     environment:
       DATABASE_URL: postgresql+psycopg://carepong:carepong@db:5432/carepong
       DATA_GO_KR_KEY: ${DATA_GO_KR_KEY:-}
@@ -31,7 +32,7 @@ services:
   model:
     build: ../model
     ports:
-      - "8001:8001"
+      - "8001:8001"      # 로컬 디버그용. AWS에선 이 줄 삭제 (api 만 내부 호출)
 
   # ④ DB — 로컬 테스트용. AWS에선 이 상자 대신 RDS 주소를 DATABASE_URL에 넣음
   db:
@@ -41,7 +42,7 @@ services:
       POSTGRES_PASSWORD: carepong
       POSTGRES_DB: carepong
     ports:
-      - "5432:5432"
+      - "5432:5432"      # 로컬용. AWS에선 RDS 사용 — 이 상자 자체를 뺀다
     volumes:
       - db_data:/var/lib/postgresql/data
 

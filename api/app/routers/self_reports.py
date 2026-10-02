@@ -1,25 +1,32 @@
-"""라벨 — 팝업 예/아니오 + 정기 체크인. 모델 vs 사용자 비교(H1-3)의 정답지.
-형식(YES/NO만인지, 1~5점도인지)과 매칭 규칙은 DA 답(Q20) 후 확정. 지금은 둘 다 받게 열어둠."""
+"""라벨 — 팝업 응답 + 정기 체크인. 모델 vs 사용자 비교(M1)의 정답지.
+필드는 혜윤 DA API명세서(10/2) '1_기본API' self-reports 그대로. 라벨↔창 매칭은 window_id.
+팝업은 자동으로 안 닫힘 — 앱은 응답(answered)·닫기(dismissed)·다른 곳 클릭(ignored)·다음 팝업 때까지 무응답(pending) 중 하나를 꼭 보낸다."""
 from datetime import datetime
 from typing import Literal
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["감지 (P03)"])
 
 class SelfReportIn(BaseModel):
-    window_id: str | None = Field(None, description="팝업을 띄운 창. 정기 체크인은 null (서버가 직전 창과 매칭)")
-    trigger: Literal["prompt", "scheduled", "random"] = Field(..., description="prompt=지수 초과 팝업 / scheduled=1h·4h·8h 정기 / random")
+    window_id: str | None = Field(None, description="팝업을 띄운 창 ID (/windows 응답의 window_id). 정기 체크인은 null")
+    trigger: Literal["morning", "spike", "random", "checkin"] = Field(..., description="/windows 응답의 prompt_type 그대로 (random = 고정 시간 보충). checkin = 앱 자체 체크인")
+    yesno: int | None = Field(None, ge=0, le=1, description="1=예 / 0=아니요 / null=무응답")
+    level_1to5: int | None = Field(None, ge=1, le=5, description="[예] 후 1(여유)~5(매우). 안 물었으면 null")
+    status: Literal["answered", "dismissed", "ignored", "pending"] = Field("answered",
+        description="answered=O/X 응답 · dismissed=닫기 버튼 · ignored=다른 곳 클릭(포커스 이탈) · pending=응답 없이 다음 팝업 시각 도달")
+    prompt_time: datetime | None = Field(None, description="팝업 뜬 시각 (앱 시계)")
+    clicked_at: datetime | None = Field(None, description="뭔가 클릭한 시각 (O/X·닫기·무시). 무응답이면 null")
+    latency_sec: int | None = Field(None, ge=0, description="clicked_at − prompt_time. 앱이 계산해 보내거나 null (서버가 계산)")
     question_version: str = Field("q1", description="문구 버전. 문구 바뀌면 올림")
-    answer_yes_no: bool | None = Field(None, description="예=true / 아니오=false / 무응답=null (45초 타임아웃)")
-    answer_scale: int | None = Field(None, ge=1, le=5, description="1~5점 (쓸지 DA 결정)")
-    answered_at: datetime
+    answered_at: datetime = Field(..., description="이 기록을 만든 시각 (앱 시계)")
     client_event_id: str
 
 class SelfReportOut(BaseModel):
     report_id: str = Field(..., examples=["rep_01"])
     accepted: bool = True
 
-@router.post("/self-reports", response_model=SelfReportOut, status_code=201, summary="[Stub] 과부하 확인 응답·정기 체크인 기록")
-def post_report(body: SelfReportIn):
+@router.post("/self-reports", response_model=SelfReportOut, status_code=201, summary="[Stub] 팝업 응답(예/아니오·1~5·상태)·정기 체크인 기록")
+def post_report(body: SelfReportIn, x_user_id: str = Header("dev")):
+    # TODO(DB): self_reports 저장 (report_id PK, window_id FK, latency_sec = clicked_at - prompt_time 보정)
     return SelfReportOut(report_id="rep_mock")

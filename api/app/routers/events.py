@@ -1,24 +1,48 @@
-"""운영 계측 — 수집 멈춤·에러·앱 시작/종료. 민감 원문 금지(창 제목·키 내용 X)."""
+"""운영·검증 이벤트 — 채원 v0.6 마커 표(p.35)를 유일한 이벤트 체계로 (결정 A, 10/2).
+앱은 이벤트를 로컬에 쌓았다가 **매일 08:30(방해금지 해제) 또는 앱 시작 시, 둘 중 먼저** 묶어서 보낸다.
+서버가 돌려준 accepted_ids 만 로컬에서 지운다. 일 집계 지표는 서버가 여기서 산출한다 (앱이 /usage/daily 를 보내지 않음).
+원시 키 코드·텍스트·창 제목은 어디에도 넣지 않는다."""
 from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["운영"])
 
+# 1차 이벤트명 (채원 v0.6 p.35 + app_health). 바꾸려면 채원 표와 같이 바꾼다 — 대시보드가 이 이름을 본다.
+EVENTS_1ST = {
+    "app_start", "heartbeat", "app_quit", "app_health",
+    "care_action", "dnd_toggle",
+    "alarm_shown", "alarm_answered",
+    "stress_prompt_shown", "stress_prompt_answered", "stress_score_answered",
+    "relief_selected", "relief_completed", "relief_abandoned",
+    "mood_checked", "chat_message",
+    "med_register_started", "med_register_completed", "med_register_abandoned",
+    "collector_toggle", "beta_upload", "water_goal_changed",
+    "level_up", "rename", "rebirth",
+    "collector_stopped", "inference_error",
+    "tab_opened",   # TA 제안(Q32): 미니홈 탭 진입 {tab: mind|archive|settings} — 탭 이용 빈도용. 채원 표 확정 대기
+}
+
 class AppEvent(BaseModel):
-    client_event_id: str
-    kind: str = Field(..., examples=["app_start", "collector_stopped", "inference_error", "dnd_on"])
-    occurred_at: datetime
-    app_version: str
-    payload: dict | None = None
+    client_event_id: str = Field(..., description="앱이 만든 고유 ID. 재전송돼도 한 번만 기록")
+    event: str = Field(..., examples=["alarm_answered"], description="채원 마커 표의 이벤트명. 목록 밖 이름은 rejected_ids 로 돌려줌")
+    screen: str | None = Field(None, examples=["P02"], description="화면 ID (P01~P08, M01~M07). 자동 이벤트는 null")
+    occurred_at: datetime = Field(..., description="앱 시계 (로컬 TZ 포함 ISO)")
+    props: dict = Field(default_factory=dict, examples=[{"kind": "med", "answer": "confirm"}],
+                        description="마커 표의 props 그대로. 예: care_action{type: walk_refused}, app_health{cpu, mem, events_dropped, crash}")
+    app_version: str = Field(..., examples=["0.1.0"])
 
 class BatchIn(BaseModel):
-    events: list[AppEvent] = Field(..., description="한 번에 여러 건. 앱이 모아뒀다 보냄")
+    events: list[AppEvent] = Field(..., max_length=5000, description="하루치 묶음. 5,000건 넘으면 나눠서")
 
 class BatchOut(BaseModel):
-    accepted_ids: list[str] = Field(..., description="저장된 client_event_id. 앱은 이것만 로컬 큐에서 지움")
-    rejected_ids: list[str] = Field(default_factory=list, description="거절된 ID (형식 오류 등)")
+    accepted_ids: list[str] = Field(..., description="저장된 client_event_id — 앱은 이것만 로컬 큐에서 지움")
+    rejected_ids: list[str] = Field(default_factory=list, description="거절된 ID (이벤트명 미등록 등)")
 
-@router.post("/events/batch", response_model=BatchOut, summary="[Stub] 앱 이벤트 배치 전송 (중복 ID는 무시)")
+@router.post("/events/batch", response_model=BatchOut, summary="[Stub] 이벤트 일 1회 묶음 전송 (08:30 또는 앱 시작 시) — 중복 ID 무시")
 def batch(body: BatchIn):
-    return BatchOut(accepted_ids=[e.client_event_id for e in body.events])
+    ok, bad = [], []
+    for e in body.events:
+        (ok if e.event in EVENTS_1ST else bad).append(e.client_event_id)
+    # TODO(DB): events 테이블 저장 (person_id·ts·event·screen·props)
+    return BatchOut(accepted_ids=ok, rejected_ids=bad)

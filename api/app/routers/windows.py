@@ -1,37 +1,75 @@
-"""감지 — 1분 창 피처 업로드 + 서버 추론 결과 회신. (D03: 서버 추론 확정)
-앱은 1분마다 16피처(+저장용 14개)를 보내고, 서버가 model 컨테이너에 넘겨 지수를 받아 돌려준다.
-팝업 여부(prompt)도 서버가 정한다: 지수 ≥ 개입 컷 + 하루 상한 미만 + 쿨다운 지남 + 방해금지 아님."""
+"""감지 — 1분 창 피처(16개) 업로드 → model 컨테이너 추론 → 팝업 정책(services/policy) 적용 → 회신.
+활동 0 창(SnKeyStrokes + SnMouseAct == 0)도 올린다 — 서버는 모델을 거치지 않고 condition_score=null 을 돌려주고 정책의 자리비움 계산에만 쓴다 (혜윤 Q17).
+수집 시간은 방해금지 창 밖(08:30~18:30)만 — 앱이 수집기를 안 돌리므로 그 시간엔 창이 오지 않는다.
+인증(토큰→user_id)은 D07 확정 후 Depends 로 교체. 지금은 헤더 X-User-Id (없으면 'dev') — 실데이터 수집 전 반드시 교체."""
 from datetime import datetime
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
+from ..services import policy, model_client
 
 router = APIRouter(tags=["감지 (P03)"])
+CUT_INTERVENE_DEFAULT = 63
+FEATURES_16 = ["SnKeyStrokes", "SnChars", "SnSpecialKeys", "SnDirectionKeys", "SnErrorKeys", "SnShortcutKeys", "SnSpaces",
+               "CharactersRatio", "ErrorKeyRatio", "SnMouseAct", "SnLeftClicked", "SnRightClicked", "SnDoubleClicked",
+               "SnWheel", "SnDragged", "SnMouseDistance"]
 
 class WindowIn(BaseModel):
     window_id: str = Field(..., examples=["win_01HZX…"], description="앱이 만든 창 ID. 라벨·예측을 이걸로 짝지음")
-    session_id: str = Field(..., examples=["ses_01"], description="수집 세션(차수)")
-    window_start: datetime = Field(..., description="창 시작 시각 (앱 시계)")
+    session_id: str = Field(..., examples=["ses_01"], description="수집 세션(앱 실행 1회)")
+    window_start: datetime = Field(..., description="창 시작 시각 (앱 시계, KST). 자정 리셋·일 집계 기준")
     window_sec: int = Field(60, description="DA 확정 1분")
-    features: dict[str, float] = Field(..., examples=[{"SnKeyStrokes": 142, "SnChars": 110, "SnErrorKeys": 6, "SnMouseAct": 38, "SnLeftClicked": 21, "SnMouseDistance": 5120.5}],
-                                       description="판정용 16 + 저장용 14. 이름은 DA 변수 명세 그대로. 결측은 null")
-    dnd: bool = Field(False, description="방해금지 중이면 true — 서버가 팝업을 안 띄움")
+    features: dict[str, float | None] = Field(..., description="판정 16개만 (pillymon 변수명 그대로). 결측 null → 서버가 중앙값 대체. 그 외 키는 무시",
+        examples=[{"SnKeyStrokes": 142, "SnChars": 110, "SnSpecialKeys": 9, "SnDirectionKeys": 4, "SnErrorKeys": 6, "SnShortcutKeys": 3,
+                   "SnSpaces": 18, "CharactersRatio": 0.77, "ErrorKeyRatio": 0.05, "SnMouseAct": 38, "SnLeftClicked": 21,
+                   "SnRightClicked": 2, "SnDoubleClicked": 1, "SnWheel": 14, "SnDragged": 0, "SnMouseDistance": 5120.5}])
+    dnd: bool = Field(False, description="방해금지 중이면 true — 팝업 안 띄움")
     client_event_id: str
 
 class WindowOut(BaseModel):
     window_id: str
-    condition_score: int | None = Field(None, ge=0, le=100, description="컨디션 지수. 활동 0 창이면 null")
-    level: str = Field("normal", examples=["normal", "observe", "intervene"], description="컷 기준: <50 normal / 50~62 observe / ≥63 intervene")
-    prompt: bool = Field(False, description="true면 앱이 '지금 과부하인가요?' 팝업을 띄움. 상한·쿨다운·방해금지 반영")
-    model_version: str = Field(..., examples=["v1"], description="어떤 모델이 판단했는지 — 라벨과 함께 저장")
+    condition_score: float | None = Field(None, ge=0, le=100, description="컨디션 지수 0~100 (소수 1자리, DA 산식 그대로). 활동 0 창·모델 실패 시 null")
+    level: str = Field("unknown", examples=["normal", "observe", "intervene", "unknown"])
+    prompt: bool = Field(False, description="true면 앱이 확인 팝업을 띄움")
+    prompt_type: str = Field("none", examples=["morning", "spike", "random", "none"],
+                             description="spike=과부하(30분 중 20분≥63, 1순위) · morning=첫 활동 30분 뒤 · random=고정 시간 보충(11:30/14:00/15:30/17:00). 모든 팝업 1시간 텀, 하루 5~8회. self-report 의 trigger 에 그대로")
+    model_version: str = Field("unavailable")
 
 class WindowBatchIn(BaseModel):
-    windows: list[WindowIn] = Field(..., description="오프라인이었다가 복구되면 여러 창을 한 번에")
+    windows: list[WindowIn] = Field(..., max_length=240, description="오프라인 복구용. 최대 240창(4시간). 팝업은 띄우지 않음")
 
-@router.post("/windows", response_model=WindowOut, summary="[Stub] 1분 창 업로드 → 지수·팝업 여부 회신")
-def post_window(body: WindowIn):
-    # TODO: model 컨테이너 /predict 호출 → 컷·상한·쿨다운 적용
-    return WindowOut(window_id=body.window_id, condition_score=71, level="intervene", prompt=True, model_version="mock-0")
+def _activity(f: dict) -> float:
+    return float(f.get("SnKeyStrokes") or 0) + float(f.get("SnMouseAct") or 0)
 
-@router.post("/windows/batch", response_model=list[WindowOut], summary="[Stub] 창 여러 개 업로드 (복구 시). 팝업은 띄우지 않음")
-def post_windows(body: WindowBatchIn):
-    return [WindowOut(window_id=w.window_id, condition_score=40, level="normal", prompt=False, model_version="mock-0") for w in body.windows]
+def _cut() -> int:
+    return int((model_client.model_info() or {}).get("cut_intervene", CUT_INTERVENE_DEFAULT))
+
+def _score(w: WindowIn) -> dict | None:
+    if _activity(w.features) == 0:
+        return None                                  # 활동 0 → 모델 안 거침 (Q17)
+    feats = {k: w.features.get(k) for k in FEATURES_16}
+    pred = model_client.predict(feats)
+    return pred if pred and pred.get("score") is not None else None
+
+def _out(w: WindowIn, pred: dict | None, ptype: str = "none") -> WindowOut:
+    if pred is None:
+        return WindowOut(window_id=w.window_id, prompt=(ptype != "none"), prompt_type=ptype)
+    return WindowOut(window_id=w.window_id, condition_score=pred["score"], level=pred["level"],
+                     prompt=(ptype != "none"), prompt_type=ptype, model_version=pred["model_version"])
+
+@router.post("/windows", response_model=WindowOut, summary="[Stub] 1분 창 업로드 → 서버 추론 → 지수·팝업 여부 회신")
+def post_window(body: WindowIn, x_user_id: str = Header("dev")):
+    pred = _score(body)
+    st = policy.get_state(x_user_id)
+    ptype = policy.decide(st, pred["score"] if pred else None, _activity(body.features), body.dnd, body.window_start, _cut())
+    # TODO(DB): feature_windows / predictions 저장
+    return _out(body, pred, ptype)
+
+@router.post("/windows/batch", response_model=list[WindowOut], summary="[Stub] 창 여러 개 업로드 (복구 시, 최대 240). 팝업 없음")
+def post_windows(body: WindowBatchIn, x_user_id: str = Header("dev")):
+    st = policy.get_state(x_user_id); cut = _cut(); out = []
+    for w in sorted(body.windows, key=lambda x: x.window_start):
+        pred = _score(w)
+        # 복구 업로드는 이력만 반영, 팝업은 안 띄움 (dnd=True 로 정책 호출)
+        policy.decide(st, pred["score"] if pred else None, _activity(w.features), True, w.window_start, cut)
+        out.append(_out(w, pred))
+    return out
