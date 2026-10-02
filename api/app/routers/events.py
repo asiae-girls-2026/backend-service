@@ -26,7 +26,8 @@ EVENTS_1ST = {
 
 class AppEvent(BaseModel):
     client_event_id: str = Field(..., description="앱이 만든 고유 ID. 재전송돼도 한 번만 기록")
-    event: str = Field(..., examples=["alarm_answered"], description="채원 마커 표의 이벤트명. 목록 밖 이름은 rejected_ids 로 돌려줌")
+    event: str = Field(..., examples=["alarm_answered"],
+                       description="채원 v0.6 마커 표의 이벤트명. 목록 밖 이름은 rejected_ids 로 돌려줌. 1차 허용 목록: " + ", ".join(sorted(EVENTS_1ST)))
     screen: str | None = Field(None, examples=["P02"], description="화면 ID (P01~P08, M01~M07). 자동 이벤트는 null")
     occurred_at: datetime = Field(..., description="앱 시계 (로컬 TZ 포함 ISO)")
     props: dict = Field(default_factory=dict, examples=[{"kind": "med", "answer": "confirm"}],
