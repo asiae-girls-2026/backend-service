@@ -2,6 +2,7 @@
 인증 방식(D07)은 미정. 일단 토큰 발급 형태로 껍데기만."""
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
+from ..services import db
 
 router = APIRouter(tags=["회원번호 (M07)"])
 
@@ -17,4 +18,6 @@ class EnrollOut(BaseModel):
 
 @router.post("/enroll", response_model=EnrollOut, summary="[Stub] 회원번호 등록 → 토큰 발급")
 def enroll(body: EnrollIn):
-    return EnrollOut(user_id="usr_mock_0001", access_token="mock-token")
+    uid = db.ensure_user(body.cp_number, body.device_id, body.app_version) or "usr_nodb"
+    # TODO(정화·D07): 토큰 발급 + users.token_hash 저장. 지금은 cp_number 를 그대로 토큰 자리에 (앱은 X-User-Id 에 cp_number 를 보냄)
+    return EnrollOut(user_id=uid, access_token=body.cp_number)

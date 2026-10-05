@@ -6,7 +6,10 @@ http://localhost:8000/docs 에서 Swagger로 확인.
   [Draft]   설계 미확정. 담당자 확정 대기
   [Planned] 1차 미포함. 2차(10/26~)에서 구현
 """
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from .services import db
 from pydantic import BaseModel
 from .routers import enroll, medications, routines, pet, relief, drugs, events, usage, windows, self_reports, config, telegram, ppg, da
 
@@ -26,9 +29,15 @@ TAGS = [
     {"name": "DA 운영 (2차)",        "description": "[Planned] 모델 교체·재학습 내보내기·개인 기준선·타임라인 (혜윤 DA 명세 2_추가API)"},
 ]
 
+@asynccontextmanager
+async def lifespan(app):
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    db.init(); yield; db.close()
+
 app = FastAPI(
+    lifespan=lifespan,
     title="CarePong API",
-    version="0.1.0",
+    version="0.2.0",
     description="케어퐁 서버 API 명세. 모든 엔드포인트는 현재 목 응답. summary 접두어 [Stub]/[Draft]/[Planned]로 상태 표시.",
     openapi_tags=TAGS,
 )

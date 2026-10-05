@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
+from ..services import db
 
 router = APIRouter(tags=["감지 (P03)"])
 
@@ -28,5 +29,22 @@ class SelfReportOut(BaseModel):
 
 @router.post("/self-reports", response_model=SelfReportOut, status_code=201, summary="[Stub] 팝업 응답(예/아니오·1~5·상태)·정기 체크인 기록")
 def post_report(body: SelfReportIn, x_user_id: str = Header("dev")):
-    # TODO(DB): self_reports 저장 (report_id PK, window_id FK, latency_sec = clicked_at - prompt_time 보정)
-    return SelfReportOut(report_id="rep_mock")
+    if not db.available():
+        return SelfReportOut(report_id="rep_nodb")
+    uid = db.ensure_user(x_user_id)
+    latency = body.latency_sec
+    if latency is None and body.prompt_time and body.clicked_at:
+        latency = int((body.clicked_at - body.prompt_time).total_seconds())
+    with db.conn() as c:
+        # window_id 가 아직 없는 창(순서 역전)이면 FK 위반 대신 null 로 저장
+        wid = body.window_id
+        if wid and not c.execute("SELECT 1 FROM windows WHERE window_id=%s", (wid,)).fetchone():
+            wid = None
+        row = c.execute("""INSERT INTO self_reports(user_id, window_id, trigger, yesno, level_1to5, status, prompt_time, clicked_at,
+                             latency_sec, question_version, answered_at, client_event_id)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (client_event_id) DO UPDATE SET received_at = self_reports.received_at
+                           RETURNING report_id""",
+                        (uid, wid, body.trigger, body.yesno, body.level_1to5, body.status, body.prompt_time, body.clicked_at,
+                         latency, body.question_version, body.answered_at, body.client_event_id)).fetchone()
+    return SelfReportOut(report_id=str(row[0]))

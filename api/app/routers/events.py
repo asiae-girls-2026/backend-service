@@ -3,8 +3,10 @@
 서버가 돌려준 accepted_ids 만 로컬에서 지운다. 일 집계 지표는 서버가 여기서 산출한다 (앱이 /usage/daily 를 보내지 않음).
 원시 키 코드·텍스트·창 제목은 어디에도 넣지 않는다."""
 from datetime import datetime
-from fastapi import APIRouter
+import json, logging
+from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
+from ..services import db
 
 router = APIRouter(tags=["운영"])
 
@@ -42,9 +44,19 @@ class BatchOut(BaseModel):
     rejected_ids: list[str] = Field(default_factory=list, description="거절된 ID (이벤트명 미등록 등)")
 
 @router.post("/events/batch", response_model=BatchOut, summary="[Stub] 이벤트 일 1회 묶음 전송 (08:30 또는 앱 시작 시) — 중복 ID 무시")
-def batch(body: BatchIn):
+def batch(body: BatchIn, x_user_id: str = Header("dev")):
     ok, bad = [], []
     for e in body.events:
         (ok if e.event in EVENTS_1ST else bad).append(e.client_event_id)
-    # TODO(DB): events 테이블 저장 (person_id·ts·event·screen·props)
+    if db.available() and ok:
+        try:
+            uid = db.ensure_user(x_user_id)
+            rows = [(uid, e.client_event_id, e.event, e.screen, e.occurred_at, json.dumps(e.props), e.app_version)
+                    for e in body.events if e.event in EVENTS_1ST]
+            with db.conn() as c, c.cursor() as cur:
+                cur.executemany("""INSERT INTO events(user_id, client_event_id, event, screen, occurred_at, props, app_version)
+                                   VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""", rows)
+        except Exception as e:
+            logging.getLogger("carepong.events").exception("events 저장 실패: %s", e)
+            return BatchOut(accepted_ids=[], rejected_ids=bad)   # 저장 안 됐으니 앱이 다음에 다시 보내게
     return BatchOut(accepted_ids=ok, rejected_ids=bad)

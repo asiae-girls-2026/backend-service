@@ -2,6 +2,7 @@
 
 | 날짜 | 변경 | 사유 |
 |---|---|---|
+| 2026-10-05 | **DB 저장 시작.** `api/migrations/001_init.sql`(테이블 12·인덱스 8, 설계 v1 그대로) + `services/db.py`(앱 기동 시 자동 적용, DB 없으면 저장 없이 동작). `/windows` `/windows/batch` `/self-reports` `/events/batch` `/enroll` 저장. 멱등(client_event_id 중복 무시), 활동0 창 null 저장, 라벨 latency 서버 계산, 없는 window_id 는 null. 실제 PostgreSQL 통합 테스트 3개 추가. 인프라: Caddy 제거 → ALB(정화 10/4) 구성, `docker-compose.aws.yml` 오버라이드 | 1.0 데이터 수집 준비 |
 | 2026-10-02 (밤3) | 이벤트 허용 목록에 `furniture_unlocked{stage}` 추가(연우 G2 검증용; 하트는 이벤트 없이 chat_message 수로 산출). 허용 목록을 `/events/batch` 필드 설명에 노출해 명세 페이지에서 보이게. Q35 확정: 수집기 `SnDoubleClicked·SnDragged` 실측값 그대로(0 고정 금지). 주소·필드 모양 변동 없음 | 연우 확인 3건, 혜윤 Q35 답 |
 | 2026-10-02 (밤2) | **v6** 혜윤 DA API명세서·DB설계 반영. 팝업 정책 v2 = 혜윤 3_동작규칙: 과부하(30분 중 20분≥63) 1순위 · 고정 보충 11:30/14:00/15:30/17:00 · **모든 팝업 1시간 텀(뜬 시각 기준)** · 하루 5~8회 · 팝업 자동 닫힘 없음 · 18:30 종료. `/self-reports`에 `status(answered/dismissed/ignored/pending)·prompt_time·clicked_at·latency_sec`. `/config` 정책값 교체(`prompt_gap_min 60`, `daily_prompt_min/max 5/8`, 고정 시각). `/relief-sessions`(Planned)·`relief_selected` 이벤트에 `window_id·report_id`(과부하→완화 연결). DA 2차 주소 6개 [Planned]: `/model/version` `/model/reload` `/windows/export` `/baseline/{id}` `/labels` `/user/{id}/timeline`. `tab_opened` 이벤트 제안 | 혜윤 10/2 파일, Q33·Q34 해소 |
 | 2026-10-02 (밤) | model/predict.py 를 **혜윤 제공 파일로 교체** (model_v1.json 내장, 활동0 → null 내장). `condition_score` **int → float(소수 1자리)** — 정수 반올림 시 62.6→63 으로 observe/intervene 이 뒤집히는 경계 불일치 발견. validation_samples.json 5건 테스트로 고정 | Q11·Q18 파일 수령 |

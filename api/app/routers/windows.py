@@ -1,11 +1,13 @@
-"""감지 — 1분 창 피처(16개) 업로드 → model 컨테이너 추론 → 팝업 정책(services/policy) 적용 → 회신.
+"""감지 — 1분 창 피처(16개) 업로드 → model 컨테이너 추론 → 팝업 정책(services/policy) 적용 → windows 테이블 저장 → 회신.
 활동 0 창(SnKeyStrokes + SnMouseAct == 0)도 올린다 — 서버는 모델을 거치지 않고 condition_score=null 을 돌려주고 정책의 자리비움 계산에만 쓴다 (혜윤 Q17).
 수집 시간은 방해금지 창 밖(08:30~18:30)만 — 앱이 수집기를 안 돌리므로 그 시간엔 창이 오지 않는다.
 인증(토큰→user_id)은 D07 확정 후 Depends 로 교체. 지금은 헤더 X-User-Id (없으면 'dev') — 실데이터 수집 전 반드시 교체."""
 from datetime import datetime
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
-from ..services import policy, model_client
+import json, logging
+from ..services import policy, model_client, db
+log = logging.getLogger("carepong.windows")
 
 router = APIRouter(tags=["감지 (P03)"])
 CUT_INTERVENE_DEFAULT = 63
@@ -56,12 +58,29 @@ def _out(w: WindowIn, pred: dict | None, ptype: str = "none") -> WindowOut:
     return WindowOut(window_id=w.window_id, condition_score=pred["score"], level=pred["level"],
                      prompt=(ptype != "none"), prompt_type=ptype, model_version=pred["model_version"])
 
+def _save(w: WindowIn, pred: dict | None, ptype: str, cp: str) -> None:
+    """windows 1행 저장. DB 없으면 건너뜀. window_id·client_event_id 중복(재전송)은 무시.
+    저장 실패는 로그만 남기고 응답은 정상 반환 — 팝업 판단이 저장 때문에 멈추면 안 됨."""
+    if not db.available(): return
+    try:
+        uid = db.ensure_user(cp); db.ensure_session(w.session_id, uid, w.window_start)
+        with db.conn() as c:
+            c.execute("""INSERT INTO windows(window_id, user_id, session_id, window_start, window_sec, features, activity_zero, dnd,
+                           condition_score, prob, level, model_version, imputed, prompt_type, client_event_id)
+                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                      (w.window_id, uid, w.session_id, w.window_start, w.window_sec,
+                       json.dumps({k: w.features.get(k) for k in FEATURES_16}), _activity(w.features) == 0, w.dnd,
+                       pred["score"] if pred else None, pred.get("prob") if pred else None, pred["level"] if pred else None,
+                       pred["model_version"] if pred else None, pred.get("imputed") if pred else None, ptype, w.client_event_id))
+    except Exception as e:
+        log.exception("windows 저장 실패 (%s): %s", w.window_id, e)
+
 @router.post("/windows", response_model=WindowOut, summary="[Stub] 1분 창 업로드 → 서버 추론 → 지수·팝업 여부 회신")
 def post_window(body: WindowIn, x_user_id: str = Header("dev")):
     pred = _score(body)
     st = policy.get_state(x_user_id)
     ptype = policy.decide(st, pred["score"] if pred else None, _activity(body.features), body.dnd, body.window_start, _cut())
-    # TODO(DB): feature_windows / predictions 저장
+    _save(body, pred, ptype, x_user_id)
     return _out(body, pred, ptype)
 
 @router.post("/windows/batch", response_model=list[WindowOut], summary="[Stub] 창 여러 개 업로드 (복구 시, 최대 240). 팝업 없음")
@@ -71,5 +90,6 @@ def post_windows(body: WindowBatchIn, x_user_id: str = Header("dev")):
         pred = _score(w)
         # 복구 업로드는 이력만 반영, 팝업은 안 띄움 (dnd=True 로 정책 호출)
         policy.decide(st, pred["score"] if pred else None, _activity(w.features), True, w.window_start, cut)
+        _save(w, pred, "none", x_user_id)
         out.append(_out(w, pred))
     return out
