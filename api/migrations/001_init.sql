@@ -100,33 +100,283 @@ CREATE TABLE IF NOT EXISTS daily_usage (
   PRIMARY KEY (user_id, day)
 );
 
--- ── 복약 (정화 저장 로직) ─────────────────────────────────────
+-- ── 복약·건기식 (정화 최신 설계) ──────────────────────────────────
+-- 설계 기준: DB_테이블구조_설계.xlsx
+-- 구현 방식만 backend-service 기준(PostgreSQL/psycopg/SQL migration)으로 반영.
+-- 제품 Master → 통합 성분 Master → 제품-성분 N:M → 안전성/상호작용 Rule → 사용자 복약 목록 순서.
+-- pg_trgm은 /v1/catalog/search 의 EXACT → CONTAINS → FUZZY 검색을 위한 운영 의존성.
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- 1) 의약품 제품 Master
 CREATE TABLE IF NOT EXISTS med_product (
-  med_product_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_seq     varchar(20) NOT NULL UNIQUE,          -- 식약처 품목기준코드
-  name         varchar(200) NOT NULL,
-  company      varchar(100),
-  efficacy     text, usage text, caution text,
-  ingredients  jsonb, interactions jsonb, sources jsonb,
-  updated_at   timestamptz NOT NULL DEFAULT now()
+  med_product_id    bigserial PRIMARY KEY,
+  item_seq          varchar(30) NOT NULL UNIQUE,    -- 품목기준코드
+  product_name      varchar(300) NOT NULL,
+  manufacturer_name varchar(300),
+  etc_otc_code      varchar(50),
+  dosage_form       varchar(100),
+  route             varchar(100),
+  permit_date       date,
+  permit_status     varchar(30),
+  source_updated_at timestamp,
+  synced_at         timestamp NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS medications (
-  medication_id  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id        uuid NOT NULL REFERENCES users(user_id),
-  name           varchar(100) NOT NULL,
-  canonical_name varchar(100),
-  item_seq       varchar(20),
-  med_product_id uuid REFERENCES med_product(med_product_id),
-  times          text[] NOT NULL,                    -- HH:MM
-  repeat_days    smallint[] NOT NULL DEFAULT '{0,1,2,3,4,5,6}',
-  alias          varchar(50), dose varchar(50), memo varchar(200),
-  source         varchar(8) NOT NULL DEFAULT 'form',
-  created_at     timestamptz NOT NULL DEFAULT now(),
-  updated_at     timestamptz NOT NULL DEFAULT now(),
-  deleted_at     timestamptz
+CREATE INDEX IF NOT EXISTS ix_med_product_name
+  ON med_product(product_name);
+
+CREATE INDEX IF NOT EXISTS ix_med_product_name_trgm
+  ON med_product USING gin (product_name gin_trgm_ops);
+
+
+-- 2) 건강기능식품 제품 Master
+CREATE TABLE IF NOT EXISTS hff_product (
+  hff_product_id    bigserial PRIMARY KEY,
+  prdlst_report_no  varchar(50) NOT NULL UNIQUE,    -- 품목제조번호
+  product_name      varchar(300) NOT NULL,
+  manufacturer_name varchar(300),
+  function_text     text,
+  intake_method     text,
+  caution_text      text,
+  raw_material_text text,
+  source_updated_at timestamp,
+  synced_at         timestamp NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS ix_medications_user ON medications(user_id) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS ix_hff_product_name
+  ON hff_product(product_name);
+
+CREATE INDEX IF NOT EXISTS ix_hff_product_name_trgm
+  ON hff_product USING gin (product_name gin_trgm_ops);
+
+
+-- 3) 통합 표준 성분 Master
+CREATE TABLE IF NOT EXISTS canonical_ingredient (
+  ingredient_id     bigserial PRIMARY KEY,
+  canonical_name_ko varchar(300) NOT NULL,
+  canonical_name_en varchar(300),
+  normalized_key    varchar(300) NOT NULL UNIQUE,
+  domain_type       varchar(20) NOT NULL,           -- DRUG / HFF / BOTH
+  ingredient_type   varchar(50),
+  active            boolean NOT NULL DEFAULT true,
+  created_at        timestamp NOT NULL DEFAULT now(),
+  updated_at        timestamp NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ingredient_alias (
+  alias_id          bigserial PRIMARY KEY,
+  ingredient_id     bigint NOT NULL REFERENCES canonical_ingredient(ingredient_id),
+  alias_text        varchar(300) NOT NULL,
+  normalized_alias  varchar(300) NOT NULL,
+  source_dataset    varchar(50),
+  mapping_method    varchar(30),                    -- EXACT / ALIAS / SEMANTIC / MANUAL
+  confidence        decimal(5,4),
+  status            varchar(20) NOT NULL            -- CANDIDATE / APPROVED / REJECTED
+);
+
+CREATE INDEX IF NOT EXISTS ix_ingredient_alias_ingredient
+  ON ingredient_alias(ingredient_id);
+
+CREATE INDEX IF NOT EXISTS ix_ingredient_alias_normalized
+  ON ingredient_alias(normalized_alias);
+
+
+-- 4) 제품-성분 N:M
+CREATE TABLE IF NOT EXISTS med_product_ingredient (
+  med_product_id        bigint NOT NULL REFERENCES med_product(med_product_id),
+  ingredient_id         bigint NOT NULL REFERENCES canonical_ingredient(ingredient_id),
+  source_ingredient_name varchar(300) NOT NULL,
+  amount                decimal(18,6),
+  unit                  varchar(50),
+  source_code           varchar(100),
+  mapping_status        varchar(20) NOT NULL,       -- MATCHED / REVIEW / FAILED
+  PRIMARY KEY (med_product_id, ingredient_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_med_product_ingredient_ingredient
+  ON med_product_ingredient(ingredient_id);
+
+CREATE TABLE IF NOT EXISTS hff_product_ingredient (
+  hff_product_id     bigint NOT NULL REFERENCES hff_product(hff_product_id),
+  ingredient_id      bigint NOT NULL REFERENCES canonical_ingredient(ingredient_id),
+  raw_ingredient_name varchar(500) NOT NULL,
+  normalized_name    varchar(300),
+  mapping_method     varchar(30),                   -- EXACT / ALIAS / SEMANTIC / MANUAL
+  match_confidence   decimal(5,4),
+  mapping_status     varchar(20) NOT NULL,          -- MATCHED / REVIEW / FAILED
+  PRIMARY KEY (hff_product_id, ingredient_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_hff_product_ingredient_ingredient
+  ON hff_product_ingredient(ingredient_id);
+
+
+-- 5) 의약품 소비자 설명
+CREATE TABLE IF NOT EXISTS med_patient_info (
+  med_product_id     bigint PRIMARY KEY REFERENCES med_product(med_product_id),
+  efficacy_text      text,
+  usage_text         text,
+  warning_text       text,
+  interaction_text   text,
+  side_effect_text   text,
+  storage_text       text,
+  source_updated_at  timestamp
+);
+
+
+-- 6) 건기식 기능성 원료 기준
+CREATE TABLE IF NOT EXISTS hff_ingredient_standard (
+  standard_id       bigserial PRIMARY KEY,
+  ingredient_id     bigint NOT NULL REFERENCES canonical_ingredient(ingredient_id),
+  source_type       varchar(20) NOT NULL,           -- I0040 / I2710
+  approval_no       varchar(100),
+  function_text     text,
+  daily_intake_min  decimal(18,6),
+  daily_intake_max  decimal(18,6),
+  unit              varchar(50),
+  caution_text      text,
+  source_record_id  varchar(150)
+);
+
+CREATE INDEX IF NOT EXISTS ix_hff_ingredient_standard_ingredient
+  ON hff_ingredient_standard(ingredient_id);
+
+
+-- 7) DUR 정규화 안전성 Rule
+CREATE TABLE IF NOT EXISTS med_safety_rule (
+  rule_id               bigserial PRIMARY KEY,
+  rule_type             varchar(50) NOT NULL,
+  ingredient_id         bigint REFERENCES canonical_ingredient(ingredient_id),
+  paired_ingredient_id  bigint REFERENCES canonical_ingredient(ingredient_id),
+  target_group          varchar(100),
+  condition_value       varchar(300),
+  warning_text          text NOT NULL,
+  source_record_id      varchar(150) NOT NULL,
+  active                boolean NOT NULL DEFAULT true
+);
+
+CREATE INDEX IF NOT EXISTS ix_med_safety_rule_ingredient
+  ON med_safety_rule(ingredient_id);
+
+CREATE INDEX IF NOT EXISTS ix_med_safety_rule_paired
+  ON med_safety_rule(paired_ingredient_id);
+
+
+-- 8) 서비스 조합 Rule
+CREATE TABLE IF NOT EXISTS interaction_rule (
+  interaction_rule_id bigserial PRIMARY KEY,
+  subject_type        varchar(30) NOT NULL,         -- INGREDIENT / DRUG_CLASS
+  subject_id          bigint NOT NULL,
+  object_type         varchar(30) NOT NULL,         -- INGREDIENT / DRUG_CLASS
+  object_id           bigint NOT NULL,
+  interaction_type    varchar(30) NOT NULL,         -- DRUG_DRUG / DRUG_HFF
+  severity            varchar(30),
+  action_type         varchar(30) NOT NULL,         -- CONTRAINDICATED / CAUTION 등
+  evidence_text       text NOT NULL,
+  source_dataset      varchar(50) NOT NULL,
+  source_record_id    varchar(150) NOT NULL,
+  review_status       varchar(20) NOT NULL,         -- APPROVED / PENDING / REJECTED
+  active              boolean NOT NULL DEFAULT true
+);
+
+CREATE INDEX IF NOT EXISTS ix_interaction_rule_subject
+  ON interaction_rule(subject_type, subject_id);
+
+CREATE INDEX IF NOT EXISTS ix_interaction_rule_object
+  ON interaction_rule(object_type, object_id);
+
+
+-- 9) 사용자 복약/건기식 등록 목록
+-- 최신 설계의 user_medication을 유지하되, 운영 서버 users.user_id가 UUID이므로
+-- user_id의 물리 타입만 UUID로 맞춘다. 제품/스케줄 구조는 최신 설계를 그대로 사용한다.
+CREATE TABLE IF NOT EXISTS user_medication (
+  user_medication_id bigserial PRIMARY KEY,
+  user_id            uuid NOT NULL REFERENCES users(user_id),
+  item_type          varchar(20) NOT NULL,          -- DRUG / HFF
+  med_product_id     bigint REFERENCES med_product(med_product_id),
+  hff_product_id     bigint REFERENCES hff_product(hff_product_id),
+  start_date         date,
+  end_date           date,
+  dose_text          varchar(300),
+  schedule_json      json,
+  active             boolean NOT NULL DEFAULT true,
+  CONSTRAINT ck_user_medication_product
+    CHECK (
+      (item_type = 'DRUG' AND med_product_id IS NOT NULL AND hff_product_id IS NULL)
+      OR
+      (item_type = 'HFF' AND hff_product_id IS NOT NULL AND med_product_id IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS ix_user_medication_user
+  ON user_medication(user_id);
+
+CREATE INDEX IF NOT EXISTS ix_user_medication_med_product
+  ON user_medication(med_product_id);
+
+CREATE INDEX IF NOT EXISTS ix_user_medication_hff_product
+  ON user_medication(hff_product_id);
+
+
+-- 10) 매핑 검수 운영
+CREATE TABLE IF NOT EXISTS mapping_candidate (
+  candidate_id        bigserial PRIMARY KEY,
+  entity_type         varchar(30) NOT NULL,
+  raw_value           varchar(500) NOT NULL,
+  candidate_entity_id bigint,
+  match_method        varchar(30) NOT NULL,         -- EXACT / ALIAS / SEMANTIC
+  confidence          decimal(5,4),
+  source_dataset      varchar(50) NOT NULL,
+  status              varchar(20) NOT NULL,         -- PENDING / APPROVED / REJECTED
+  created_at          timestamp NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mapping_audit (
+  mapping_id          bigserial PRIMARY KEY,
+  entity_type         varchar(30) NOT NULL,
+  raw_value           varchar(500) NOT NULL,
+  canonical_entity_id bigint NOT NULL,
+  method              varchar(30) NOT NULL,         -- EXACT / ALIAS / SEMANTIC / MANUAL
+  confidence          decimal(5,4),
+  approved_by         varchar(100),
+  approved_at         timestamp
+);
+
+
+-- 11) 원천 추적·동기화 운영
+CREATE TABLE IF NOT EXISTS sync_run (
+  sync_run_id      bigserial PRIMARY KEY,
+  dataset_code     varchar(50) NOT NULL,
+  started_at       timestamp NOT NULL,
+  finished_at      timestamp,
+  status           varchar(20) NOT NULL,            -- SUCCESS / FAILED / PARTIAL
+  fetched_count    integer NOT NULL,
+  inserted_count   integer NOT NULL,
+  updated_count    integer NOT NULL,
+  unchanged_count  integer NOT NULL,
+  failed_count     integer NOT NULL,
+  error_message    text
+);
+
+CREATE TABLE IF NOT EXISTS source_provenance (
+  provenance_id    bigserial PRIMARY KEY,
+  entity_type      varchar(30) NOT NULL,            -- PRODUCT / INGREDIENT / RULE
+  entity_id        bigint NOT NULL,
+  dataset_code     varchar(50) NOT NULL,
+  source_record_id varchar(150) NOT NULL,
+  source_updated_at timestamp,
+  fetched_at       timestamp NOT NULL,
+  raw_hash         varchar(64),
+  sync_run_id      bigint REFERENCES sync_run(sync_run_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_source_provenance_entity
+  ON source_provenance(entity_type, entity_id);
+
+CREATE INDEX IF NOT EXISTS ix_source_provenance_dataset
+  ON source_provenance(dataset_code, source_record_id);
+
 
 -- ── 백업 스냅샷·정책 상태 ───────────────────────────────────────
 CREATE TABLE IF NOT EXISTS pet_state (
