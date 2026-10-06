@@ -36,7 +36,7 @@ class WindowOut(BaseModel):
     prompt: bool = Field(False, description="true면 앱이 확인 팝업을 띄움")
     prompt_type: str = Field("none", examples=["morning", "spike", "random", "none"],
                              description="spike=과부하(30분 중 20분≥63, 1순위) · morning=첫 활동 30분 뒤 · random=고정 시간 보충(11:30/14:00/15:30/17:00). 모든 팝업 1시간 텀, 하루 5~8회. self-report 의 trigger 에 그대로")
-    model_version: str = Field("unavailable")
+    model_version: str = Field("unavailable", description="추론에 쓴 모델. 활동 0 창이면 skipped:activity0, 모델 서버 연결 실패면 unavailable")
 
 class WindowBatchIn(BaseModel):
     windows: list[WindowIn] = Field(..., max_length=240, description="오프라인 복구용. 최대 240창(4시간). 팝업은 띄우지 않음")
@@ -56,7 +56,9 @@ def _score(w: WindowIn) -> dict | None:
 
 def _out(w: WindowIn, pred: dict | None, ptype: str = "none") -> WindowOut:
     if pred is None:
-        return WindowOut(window_id=w.window_id, prompt=(ptype != "none"), prompt_type=ptype)
+        # 왜 null 인지 앱·테스트에서 바로 알 수 있게: 활동 0 창(정상) vs 모델 서버 연결 실패(장애)
+        why = "skipped:activity0" if _activity(w.features) == 0 else "unavailable"
+        return WindowOut(window_id=w.window_id, prompt=(ptype != "none"), prompt_type=ptype, model_version=why)
     return WindowOut(window_id=w.window_id, condition_score=pred["score"], level=pred["level"],
                      prompt=(ptype != "none"), prompt_type=ptype, model_version=pred["model_version"])
 

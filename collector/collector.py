@@ -111,13 +111,19 @@ def run(window_sec: int, out):
     keyboard.Listener(on_press=kp, on_release=col.on_release).start()
     mouse.Listener(on_click=mc, on_scroll=col.on_scroll, on_move=col.on_move).start()
     poll = lambda: None
-    print(json.dumps({"event": "started", "window_sec": window_sec}), file=out, flush=True)
+    def emit(obj) -> None:
+        # 부모(앱)가 먼저 종료해 stdout 파이프가 닫히면 Windows 에선 OSError 22/BrokenPipe — 크래시 창 대신 조용히 종료
+        try:
+            print(json.dumps(obj, ensure_ascii=False), file=out, flush=True)
+        except (OSError, ValueError):
+            sys.exit(0)
+    emit({"event": "started", "window_sec": window_sec})
     nxt = time.time() + window_sec
     while True:
         time.sleep(1); poll()
         if time.time() >= nxt:
             nxt += window_sec
-            print(json.dumps(col.snapshot(), ensure_ascii=False), file=out, flush=True)
+            emit(col.snapshot())
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
