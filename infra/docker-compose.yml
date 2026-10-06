@@ -12,8 +12,8 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://carepong:carepong@db:5432/carepong}
       DATA_GO_KR_KEY: ${DATA_GO_KR_KEY:-}
-      FOODSAFETY_KEY: ${FOODSAFETY_KEY}
-      MODEL_URL: ${MODEL_URL}
+      FOODSAFETY_KEY: ${FOODSAFETY_KEY:-}
+      MODEL_URL: ${MODEL_URL:-http://model:8001}   # 로컬 기본 = 같은 compose 의 model 상자. AWS 는 .env 로 지정
     ports:
       - "8000:8000"      # 로컬 테스트용
     volumes:
