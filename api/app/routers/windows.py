@@ -25,6 +25,8 @@ class WindowIn(BaseModel):
                    "SnSpaces": 18, "CharactersRatio": 0.77, "ErrorKeyRatio": 0.05, "SnMouseAct": 38, "SnLeftClicked": 21,
                    "SnRightClicked": 2, "SnDoubleClicked": 1, "SnWheel": 14, "SnDragged": 0, "SnMouseDistance": 5120.5}])
     dnd: bool = Field(False, description="방해금지 중이면 true — 팝업 안 띄움")
+    app_tab: str | None = Field(None, examples=["pet", "mind", "archive", "settings"],
+                                description="이 창 동안 사용자가 있던 우리 앱 화면 (채원 app_category): pet=오버레이만 / mind·archive·settings=미니홈 탭 / null=앱 미사용. 탭별 이용·지수 상관용")
     client_event_id: str
 
 class WindowOut(BaseModel):
@@ -65,11 +67,11 @@ def _save(w: WindowIn, pred: dict | None, ptype: str, cp: str) -> None:
     try:
         uid = db.ensure_user(cp); db.ensure_session(w.session_id, uid, w.window_start)
         with db.conn() as c:
-            c.execute("""INSERT INTO windows(window_id, user_id, session_id, window_start, window_sec, features, activity_zero, dnd,
+            c.execute("""INSERT INTO windows(window_id, user_id, session_id, window_start, window_sec, features, activity_zero, dnd, app_tab,
                            condition_score, prob, level, model_version, imputed, prompt_type, client_event_id)
-                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
                       (w.window_id, uid, w.session_id, w.window_start, w.window_sec,
-                       json.dumps({k: w.features.get(k) for k in FEATURES_16}), _activity(w.features) == 0, w.dnd,
+                       json.dumps({k: w.features.get(k) for k in FEATURES_16}), _activity(w.features) == 0, w.dnd, w.app_tab,
                        pred["score"] if pred else None, pred.get("prob") if pred else None, pred["level"] if pred else None,
                        pred["model_version"] if pred else None, pred.get("imputed") if pred else None, ptype, w.client_event_id))
     except Exception as e:

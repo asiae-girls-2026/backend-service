@@ -58,6 +58,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | features | jsonb |  | N | 판정 16개 {SnKeyStrokes:…}. 결측 null |
 | activity_zero | boolean |  | N | SnKeyStrokes+SnMouseAct == 0 |
 | dnd | boolean |  | N | 방해금지 중 |
+| app_tab | varchar(12) |  | Y | 그 1분 동안 있던 우리 앱 화면 pet/mind/archive/settings (채원 app_category). 002 마이그레이션 |
 | condition_score | numeric(4,1) |  | Y | 0~100.0. 활동0·모델실패 null |
 | prob | numeric(6,4) |  | Y | isotonic 보정 확률 |
 | level | varchar(10) |  | Y | normal/observe/intervene |

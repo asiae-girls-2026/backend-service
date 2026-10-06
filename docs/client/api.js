@@ -55,10 +55,11 @@ async function init({ cpNumber, deviceId, appVersion: ver, dataDir }) {
 
 /** 1분 창 집계 끝날 때마다. features = 수집기(collector.exe) stdout 의 features 그대로 (16개, 활동 0 창도 보냄)
  *  반환 {condition_score, level, prompt, prompt_type, window_id} — prompt 가 true 면 P03 팝업 띄우고, prompt_type 을 기억해 둠 */
-async function postWindow({ windowId = uid(), sessionId, windowStart, features, dnd = false }) {
+async function postWindow({ windowId = uid(), sessionId, windowStart, features, dnd = false, appTab = null }) {
+  // appTab: 이 1분 동안 사용자가 있던 우리 앱 화면 — "pet"(오버레이만) | "mind" | "archive" | "settings" | null(앱 미사용)
   return call("POST", `${V}/windows`, {
     window_id: windowId, session_id: sessionId, window_start: windowStart, window_sec: 60,
-    features, dnd, client_event_id: uid(),
+    features, dnd, app_tab: appTab, client_event_id: uid(),
   }, { timeoutMs: 4000 });
 }
 
