@@ -43,10 +43,6 @@ TAGS = [
         "description": "CP 번호 등록·토큰. 인증 방식(D07)은 확정 전이라 토큰 모양만 고정",
     },
     {
-        "name": "약 등록 관리 (M07, P02)",
-        "description": "1차: 설정 안 약 등록·수정·삭제 + 약 알람. 약지도 탭·약 검색은 2차",
-    },
-    {
         "name": "제품 검색",
         "description": "의약품·건강기능식품 제품명 검색. 정확일치·부분일치·유사검색 지원.",
     },
@@ -141,7 +137,7 @@ def health():
 
 for r in (
     enroll,
-    medications,
+    #medications,
     routines,
     pet,
     relief,
