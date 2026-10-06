@@ -1,10 +1,10 @@
 -- 003 복약 / 건기식 — 정화 설계 (10/6). 001 에서 분리: 이미 001 이 적용된 DB(로컬·RDS)에도 적용되게.
 --
 -- med_product / hff_product 는 정화 데이터 파이프라인(Alembic)이 운영 RDS 에 만들어 적재하는 Catalog 테이블.
--- 여기서는 (1) 로컬·신규 DB 에서 FK 가 깨지지 않도록 최소 스텁만 IF NOT EXISTS 로 만들고
---          (2) 구 설계(001 초기판)의 uuid 형 med_product / medications 가 남아 있으면 지운다 (운영 RDS 의 bigint 형은 건드리지 않음)
+-- 여기서는 (1) 구 설계(001 초기판)의 uuid 형 med_product / medications 가 남아 있으면 지우고 (운영 RDS 의 bigint 형은 건드리지 않음)
+--          (2) Catalog 3 테이블을 RDS 와 동일 구조로 IF NOT EXISTS 생성 (정화 docs/db/carepong_product_schema.sql 기준)
 --          (3) catalog 검색(word_similarity)용 pg_trgm 확장
--- 운영 RDS 에서는 (1)(2) 가 모두 건너뛰어지고 user_medication 만 생성된다.
+--          (4) user_medication 생성.  운영 RDS 에서는 (1)(2) 가 건너뛰어지고 (3)(4) 만 적용된다.
 
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns
@@ -14,18 +14,49 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- ── Catalog 테이블 (정화 docs/db/carepong_product_schema.sql = 운영 RDS pg_dump --schema-only 를 IF NOT EXISTS 로 옮김) ──
+-- 운영 RDS 에는 이미 존재 → 전부 건너뜀. 로컬·신규 DB 에서는 RDS 와 동일한 구조로 생성(데이터는 비어 있음).
 CREATE TABLE IF NOT EXISTS med_product (
   med_product_id    bigserial PRIMARY KEY,
-  item_seq          varchar(20),
-  product_name      varchar(300),
-  manufacturer_name varchar(200)
+  item_seq          varchar(30)  NOT NULL UNIQUE,
+  product_name      varchar(300) NOT NULL,
+  manufacturer_name varchar(300),
+  etc_otc_code      varchar(50),
+  dosage_form       varchar(100),
+  route             varchar(100),
+  permit_date       date,
+  permit_status     varchar(30),
+  source_updated_at timestamp,
+  synced_at         timestamp NOT NULL
 );
+CREATE INDEX IF NOT EXISTS ix_med_product_product_name ON med_product(product_name);
+
+CREATE TABLE IF NOT EXISTS med_patient_info (
+  med_product_id    bigint PRIMARY KEY REFERENCES med_product(med_product_id) ON DELETE CASCADE,
+  efficacy_text     text,
+  usage_text        text,
+  warning_text      text,
+  interaction_text  text,
+  side_effect_text  text,
+  storage_text      text,
+  source_updated_at timestamp
+);
+
 CREATE TABLE IF NOT EXISTS hff_product (
   hff_product_id    bigserial PRIMARY KEY,
-  prdlst_report_no  varchar(40),
-  product_name      varchar(300),
-  manufacturer_name varchar(200)
+  prdlst_report_no  varchar(50)  NOT NULL UNIQUE,
+  product_name      varchar(300) NOT NULL,
+  manufacturer_name varchar(300),
+  function_text     text,
+  intake_method     text,
+  caution_text      text,
+  raw_material_text text,
+  source_updated_at timestamp,
+  synced_at         timestamp NOT NULL
 );
+CREATE INDEX IF NOT EXISTS ix_hff_product_product_name ON hff_product(product_name);
+
+-- catalog 검색(word_similarity) 용
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 --

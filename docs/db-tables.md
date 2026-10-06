@@ -12,8 +12,8 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | `self_reports` | 1차 | TA·혜윤 | POST /v1/self-reports | 팝업 응답·정기 체크인 라벨. windows 와 window_id 로 짝 (M1 정답지) |
 | `events` | 1차 | TA·채원 | POST /v1/events/batch | 채원 마커 표 이벤트 1줄 = 1행. 일 집계·검증 대시보드·타임라인의 원천 |
 | `daily_usage` | 1차 | TA·연우 | (서버 집계) GET /v1/usage/daily 2차 | 연우 시트14-② 일 집계 19개. 매일 08:30 배치 수신 후 서버가 events 에서 산출 |
-| `medications` | 1차 | TA·정화 | GET/POST/PUT/DELETE /v1/medications | 설정 안 약 등록 관리. 원본은 앱 로컬, 서버는 사본 |
-| `med_product` | 2차(틀만 1차) | 정화 | GET /v1/drugs/search 2차 | 식약처 e약은요 제품 마스터 (정화 D14 RAG 계약) |
+| `user_medication` | 2차 (10/6 정화 설계로 교체) | 정화 | /v1/medications 2차 | 사용자 복용 등록. DRUG(med_product) 또는 HFF(hff_product) 중 하나 참조. 003 |
+| `med_product` · `med_patient_info` · `hff_product` | 2차 (구조만 1차) | 정화 | GET /v1/catalog/search | 식약처 의약품·건기식 Catalog. 정화 파이프라인(Alembic)이 RDS 에 적재. 로컬은 003 이 동일 구조로 빈 테이블 생성 (`docs/db/carepong_product_schema.sql`) |
 | `pet_state` | 1차 | TA·연우 | GET/PUT /v1/pet | 펫 백업 스냅샷 (사용자당 1행). 하트·방꾸미기 누적도 여기 |
 | `routine_settings` | 1차 | TA·채원 | GET/PUT /v1/routines | 설정 백업 (사용자당 1행) |
 | `user_prompt_state` | 1차 | TA | (내부) services/policy | 팝업 정책 상태 — 지금은 메모리, 재시작 시 초기화 문제 해결용 |
@@ -134,43 +134,32 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | prompts_shown | smallint |  | N | 서버 팝업 수 (windows.prompt_type≠none) |
 | computed_at | timestamptz |  | N |  |
 
-### medications (1차)
-설정 안 약 등록 관리. 원본은 앱 로컬, 서버는 사본. 정화 Q27: item_seq → med_product 연결. 1차는 null 허용(검색 2차)
+### user_medication (2차 — 정화 설계, 003_user_medication.sql)
+사용자 복용 등록. 10/6 정화 최신 복약·건기식 설계로 교체 (구 `medications` 테이블·`/v1/medications` 1차 제외). 원본은 앱 로컬, 서버는 사본.
 
-| 컬럼 | 타입 | key | null | 설명 |
+| 컬럼 | 타입 | 제약 | NULL | 설명 |
 |---|---|---|---|---|
-| medication_id | uuid | PK | N |  |
-| user_id | uuid | FK users | N |  |
-| name | varchar(100) |  | N | 사용자 입력 |
-| canonical_name | varchar(100) |  | Y | DA 데이터셋 정확 명칭 (2차) |
-| item_seq | varchar(20) |  | Y | 식약처 품목기준코드 |
-| med_product_id | uuid | FK med_product | Y | 2차 검색 연동 후 |
-| times | text[] |  | N | HH:MM 배열 |
-| repeat_days | smallint[] |  | N | 0=월…6=일, 기본 전부 |
-| alias | varchar(50) |  | Y |  |
-| dose | varchar(50) |  | Y |  |
-| memo | varchar(200) |  | Y |  |
-| source | varchar(8) |  | N | lui/form |
-| created_at | timestamptz |  | N |  |
-| updated_at | timestamptz |  | N |  |
-| deleted_at | timestamptz |  | Y | 소프트 삭제 |
+| user_medication_id | bigserial | PK | N | |
+| user_id | uuid | FK users | N | |
+| item_type | varchar(20) | DRUG / HFF | N | 약 or 건강기능식품 |
+| med_product_id | bigint | FK med_product | Y | item_type=DRUG 일 때 필수 |
+| hff_product_id | bigint | FK hff_product | Y | item_type=HFF 일 때 필수 |
+| start_date · end_date | date | end ≥ start | Y | 복용 기간 |
+| dose_text | varchar(300) | | Y | 용량 자유 텍스트 |
+| schedule_json | jsonb | | Y | 복용 시각·요일 |
+| active | boolean | default true | N | |
+| created_at · updated_at | timestamptz | | N | |
 
-### med_product (2차(틀만 1차))
-식약처 e약은요 제품 마스터 (정화 D14 RAG 계약). 1차는 빈 테이블로 생성만. CSV 적재 형식은 정화 Q26
+### med_product · med_patient_info · hff_product (Catalog — 정화 파이프라인)
+운영 RDS 에는 정화 Alembic 파이프라인이 생성·적재. 백엔드 003 은 로컬·신규 DB 에만 같은 구조(`docs/db/carepong_product_schema.sql` = RDS pg_dump --schema-only)로 빈 테이블을 만든다 → 로컬 = RDS 구조.
 
-| 컬럼 | 타입 | key | null | 설명 |
-|---|---|---|---|---|
-| med_product_id | uuid | PK | N | 내부 PK |
-| item_seq | varchar(20) | UQ | N | 식약처 품목기준코드 (외부 연결키) |
-| name | varchar(200) |  | N |  |
-| company | varchar(100) |  | Y |  |
-| efficacy | text |  | Y |  |
-| usage | text |  | Y |  |
-| caution | text |  | Y |  |
-| ingredients | jsonb |  | Y | 성분 배열 |
-| interactions | jsonb |  | Y | 상호작용·DUR |
-| sources | jsonb |  | Y | RAG 근거 |
-| updated_at | timestamptz |  | N |  |
+| 테이블 | 주요 컬럼 | 비고 |
+|---|---|---|
+| med_product | med_product_id bigserial PK · item_seq varchar(30) UNIQUE · product_name varchar(300) · manufacturer_name · etc_otc_code · dosage_form · route · permit_date · permit_status · source_updated_at · synced_at | 식약처 의약품 제품 마스터. ix(product_name) |
+| med_patient_info | med_product_id PK/FK(cascade) · efficacy_text · usage_text · warning_text · interaction_text · side_effect_text · storage_text | e약은요 환자용 설명 |
+| hff_product | hff_product_id bigserial PK · prdlst_report_no varchar(50) UNIQUE · product_name · manufacturer_name · function_text · intake_method · caution_text · raw_material_text · synced_at | 건강기능식품. ix(product_name) |
+
+`/v1/catalog/search` 는 `word_similarity` 를 쓰므로 `pg_trgm` 확장 필요 (003 에서 `CREATE EXTENSION IF NOT EXISTS`).
 
 ### pet_state (1차)
 펫 백업 스냅샷 (사용자당 1행). 하트·방꾸미기 누적도 여기. 보상 계산은 앱. 서버는 최신값만 덮어씀
@@ -248,13 +237,14 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 
 | 부모 | 관계 | 자식 | 키 | 설명 |
 |---|---|---|---|---|
-| users | 1 : N | sessions · windows · self_reports · events · medications | user_id | 모든 테이블의 주인 |
+| users | 1 : N | sessions · windows · self_reports · events · user_medication | user_id | 모든 테이블의 주인 |
 | sessions | 1 : N | windows | session_id | 앱 실행 1회 = 세션. 세션별 조회 |
 | windows | 1 : N | self_reports | window_id | ★ 라벨↔창 매칭 (M1). 체크인은 null |
 | windows / self_reports | 1 : N | events (relief_selected props) | props.window_id · props.report_id | ★ 과부하→완화 연결 (혜윤 🔴). FK 아닌 jsonb 참조 — 2차에 relief_sessions 테이블로 승격 가능 |
 | events | N → 1 | daily_usage | user_id + date(occurred_at) | 서버 집계 (매일 08:30 이후) |
 | windows | N → 1 | daily_usage | user_id + date(window_start) | prompts_shown · collector_active_min |
-| med_product | 1 : N | medications | med_product_id / item_seq | 2차 검색 연동 후 |
+| med_product / hff_product | 1 : N | user_medication | med_product_id / hff_product_id | item_type 에 따라 둘 중 하나 |
+| med_product | 1 : 1 | med_patient_info | med_product_id | cascade |
 | users | 1 : 1 | pet_state · routine_settings · user_prompt_state | user_id | 스냅샷·상태 |
 
 ## 인덱스
@@ -270,4 +260,4 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | events | (event, occurred_at) | 대시보드 지표 |
 | events | (client_event_id) UNIQUE | 멱등 |
 | events | props GIN | 2차 — props 안 값 검색 시 |
-| medications | (user_id) WHERE deleted_at IS NULL |  |
+| user_medication | (user_id) · (user_id, active) · (med_product_id) · (hff_product_id) | 003 |
