@@ -7,7 +7,7 @@ from ..services import db
 router = APIRouter(tags=["회원번호 (M07)"])
 
 class EnrollIn(BaseModel):
-    cp_number: str = Field(..., examples=["CP-3F9A2B7C"], description="앱이 최초 실행 시 발급한 익명 번호")
+    cp_number: str = Field(..., min_length=3, max_length=12, pattern=r"^CP-[A-Z0-9]{1,9}$", examples=["CP-3F9A2B7C"], description="앱이 최초 실행 시 발급한 익명 번호 CP-XXXXXXXX (대문자·숫자, 최대 12자 — DB users.cp_number varchar(12))")
     device_id: str = Field(..., examples=["win-7d1c…"], description="앱이 만든 기기 식별자")
     app_version: str = Field(..., examples=["0.1.0"])
     os: str = Field("windows", examples=["windows"])

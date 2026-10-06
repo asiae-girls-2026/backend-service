@@ -2,6 +2,7 @@
 
 | 날짜 | 변경 | 사유 |
 |---|---|---|
+| 2026-10-06 (오후) | `scripts/smoke.py` 추가 — 표준 라이브러리만으로 헬스·설정·등록·혜윤 샘플 추론(74.1)·활동0·멱등·라벨·이벤트 배치 8개 검사 (`python scripts/smoke.py <주소>`). `/v1/enroll.cp_number` 형식 검증(`CP-` + 대문자·숫자, ≤12자) → 길이 초과 시 500 대신 422. 정화 `user_medication`·Catalog 3 테이블을 `003_user_medication.sql` 로 분리(RDS 덤프와 동일 구조, 로컬 compose `MODEL_URL` 기본값 복구) | 1차 통합 QA |
 | 2026-10-06 | **v6.2** `windows.app_tab`(앱 탭 구분, `002_app_tab.sql`)·이벤트 `minihome_closed` 추가. 정화 `/v1/catalog/search`(약·건기식 통합 검색, [Planned] 2차) 명세 등록 — AWS 배포본(ALB)에 이미 포함. 주소 33 → 34개. 1차 주소·필드 변동 없음 | 채원 app_category 확인, 정화 AWS 배포본 대조 |
 | 2026-10-05 | **DB 저장 시작.** `api/migrations/001_init.sql`(테이블 12·인덱스 8, 설계 v1 그대로) + `services/db.py`(앱 기동 시 자동 적용, DB 없으면 저장 없이 동작). `/windows` `/windows/batch` `/self-reports` `/events/batch` `/enroll` 저장. 멱등(client_event_id 중복 무시), 활동0 창 null 저장, 라벨 latency 서버 계산, 없는 window_id 는 null. 실제 PostgreSQL 통합 테스트 3개 추가. 인프라: Caddy 제거 → ALB(정화 10/4) 구성, `docker-compose.aws.yml` 오버라이드 | 1.0 데이터 수집 준비 |
 | 2026-10-02 (밤3) | 이벤트 허용 목록에 `furniture_unlocked{stage}` 추가(연우 G2 검증용; 하트는 이벤트 없이 chat_message 수로 산출). 허용 목록을 `/events/batch` 필드 설명에 노출해 명세 페이지에서 보이게. Q35 확정: 수집기 `SnDoubleClicked·SnDragged` 실측값 그대로(0 고정 금지). 주소·필드 모양 변동 없음 | 연우 확인 3건, 혜윤 Q35 답 |
