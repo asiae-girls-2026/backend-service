@@ -4,9 +4,10 @@
 원시 키 코드·텍스트·창 제목은 어디에도 넣지 않는다."""
 from datetime import datetime
 import json, logging
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from ..services import db
+from ..services.auth import AuthUser, require_user
 
 router = APIRouter(tags=["운영"])
 
@@ -45,19 +46,34 @@ class BatchOut(BaseModel):
     rejected_ids: list[str] = Field(default_factory=list, description="거절된 ID (이벤트명 미등록 등)")
 
 @router.post("/events/batch", response_model=BatchOut, summary="[Stub] 이벤트 일 1회 묶음 전송 (08:30 또는 앱 시작 시) — 중복 ID 무시")
-def batch(body: BatchIn, x_user_id: str = Header("dev")):
+def batch(body: BatchIn, user: AuthUser = Depends(require_user)):
     ok, bad = [], []
     for e in body.events:
         (ok if e.event in EVENTS_1ST else bad).append(e.client_event_id)
-    if db.available() and ok:
+
+    if not db.available():
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    if ok:
+        rows = [
+            (
+                user.user_id, e.client_event_id, e.event, e.screen,
+                e.occurred_at, json.dumps(e.props), e.app_version,
+            )
+            for e in body.events if e.event in EVENTS_1ST
+        ]
         try:
-            uid = db.ensure_user(x_user_id)
-            rows = [(uid, e.client_event_id, e.event, e.screen, e.occurred_at, json.dumps(e.props), e.app_version)
-                    for e in body.events if e.event in EVENTS_1ST]
             with db.conn() as c, c.cursor() as cur:
-                cur.executemany("""INSERT INTO events(user_id, client_event_id, event, screen, occurred_at, props, app_version)
-                                   VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""", rows)
-        except Exception as e:
-            logging.getLogger("carepong.events").exception("events 저장 실패: %s", e)
-            return BatchOut(accepted_ids=[], rejected_ids=bad)   # 저장 안 됐으니 앱이 다음에 다시 보내게
+                cur.executemany(
+                    """INSERT INTO events
+                       (user_id, client_event_id, event, screen,
+                        occurred_at, props, app_version)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT DO NOTHING""",
+                    rows,
+                )
+        except Exception:
+            logging.getLogger("carepong.events").exception("events 저장 실패")
+            raise HTTPException(status_code=503, detail="Event storage unavailable")
+
     return BatchOut(accepted_ids=ok, rejected_ids=bad)
