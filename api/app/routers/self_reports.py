@@ -10,7 +10,7 @@ from ..services import db
 router = APIRouter(tags=["감지 (P03)"])
 
 class SelfReportIn(BaseModel):
-    window_id: str | None = Field(None, description="팝업을 띄운 창 ID (/windows 응답의 window_id). 정기 체크인은 null")
+    window_id: str | None = Field(None, max_length=64, description="팝업을 띄운 창 ID (/windows 응답의 window_id). 정기 체크인은 null")
     trigger: Literal["morning", "spike", "random", "checkin"] = Field(..., description="/windows 응답의 prompt_type 그대로 (random = 고정 시간 보충). checkin = 앱 자체 체크인")
     yesno: int | None = Field(None, ge=0, le=1, description="1=예 / 0=아니요 / null=무응답")
     level_1to5: int | None = Field(None, ge=1, le=5, description="[예] 후 1(여유)~5(매우). 안 물었으면 null")

@@ -39,7 +39,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 
 | 컬럼 | 타입 | key | null | 설명 |
 |---|---|---|---|---|
-| session_id | varchar(32) | PK | N | 앱 발급 (ses_…) |
+| session_id | varchar(64) | PK | N | 앱 발급. 0.1.1 앱은 UUID 36자 (004 에서 32→64) |
 | user_id | uuid | FK users | N |  |
 | started_at | timestamptz |  | N | 첫 창 시각 (KST) |
 | ended_at | timestamptz |  | Y | 마지막 창 시각 (갱신) |
@@ -50,9 +50,9 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 
 | 컬럼 | 타입 | key | null | 설명 |
 |---|---|---|---|---|
-| window_id | varchar(32) | PK | N | 앱 발급 (win_…) |
+| window_id | varchar(64) | PK | N | 앱 발급. 0.1.1 앱은 UUID 36자 (004 에서 32→64) |
 | user_id | uuid | FK users | N |  |
-| session_id | varchar(32) | FK sessions | N |  |
+| session_id | varchar(64) | FK sessions | N |  |
 | window_start | timestamptz | IDX | N | 창 시작 (앱 시계, KST). 자정 리셋·일 집계 기준 |
 | window_sec | smallint |  | N | 60 |
 | features | jsonb |  | N | 판정 16개 {SnKeyStrokes:…}. 결측 null |
@@ -76,7 +76,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 |---|---|---|---|---|
 | report_id | uuid | PK | N | 서버 발급 |
 | user_id | uuid | FK users | N |  |
-| window_id | varchar(32) | FK windows | Y | 팝업 띄운 창. 체크인은 null |
+| window_id | varchar(64) | FK windows | Y | 팝업 띄운 창. 체크인은 null |
 | trigger | varchar(10) |  | N | morning/spike/random/checkin |
 | yesno | smallint |  | Y | 1 예 / 0 아니요 / null 무응답 |
 | level_1to5 | smallint |  | Y | [예] 후 1~5 |

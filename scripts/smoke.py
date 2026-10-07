@@ -11,13 +11,16 @@
 종료 코드 0 = 전부 통과, 1 = 실패 있음.
 """
 import json, sys, time, uuid, urllib.request, urllib.error
+for _s in (sys.stdout, sys.stderr):   # 윈도우 cp949 콘솔에서 ✅ 출력 시 UnicodeEncodeError 방지
+    try: _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception: pass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000").rstrip("/")
 USER = f"CP-S{uuid.uuid4().hex[:7].upper()}"   # 실제 형식과 같은 11자 (CP-S 로 시작 = 스모크 데이터)
-SESSION = f"ses_smoke_{uuid.uuid4().hex[:8]}"
+SESSION = str(uuid.uuid4())   # 앱(stress.ts)과 동일한 UUID 36자 — 001 의 varchar(32) 였으면 여기서 저장 실패가 드러난다 (004 에서 64로 확장)
 HDR = {"Content-Type": "application/json", "X-User-Id": USER}
 results = []
 
@@ -46,7 +49,7 @@ def now_iso(offset_min=0):
 
 
 def window(features, offset_min=0, dnd=False):
-    return {"window_id": f"win_smoke_{uuid.uuid4().hex[:10]}", "session_id": SESSION,
+    return {"window_id": str(uuid.uuid4()), "session_id": SESSION,   # 앱(api.ts uid())과 동일한 UUID 36자
             "window_start": now_iso(offset_min), "window_sec": 60, "features": features,
             "dnd": dnd, "app_tab": "home", "client_event_id": f"ce_{uuid.uuid4().hex}"}
 

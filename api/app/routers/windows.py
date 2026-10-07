@@ -16,8 +16,8 @@ FEATURES_16 = ["SnKeyStrokes", "SnChars", "SnSpecialKeys", "SnDirectionKeys", "S
                "SnWheel", "SnDragged", "SnMouseDistance"]
 
 class WindowIn(BaseModel):
-    window_id: str = Field(..., examples=["win_01HZX…"], description="앱이 만든 창 ID. 라벨·예측을 이걸로 짝지음")
-    session_id: str = Field(..., examples=["ses_01"], description="수집 세션(앱 실행 1회)")
+    window_id: str = Field(..., max_length=64, examples=["win_01HZX…"], description="앱이 만든 창 ID(≤64자, UUID 가능). 라벨·예측을 이걸로 짝지음")
+    session_id: str = Field(..., max_length=64, examples=["ses_01"], description="수집 세션(앱 실행 1회, ≤64자, UUID 가능)")
     window_start: datetime = Field(..., description="창 시작 시각 (앱 시계, KST). 자정 리셋·일 집계 기준")
     window_sec: int = Field(60, description="DA 확정 1분")
     features: dict[str, float | None] = Field(..., description="판정 16개만 (pillymon 변수명 그대로). 결측 null → 서버가 중앙값 대체. 그 외 키는 무시",
