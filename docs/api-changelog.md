@@ -2,6 +2,7 @@
 
 | 날짜 | 변경 | 사유 |
 |---|---|---|
+| 2026-10-12 | **서버 복원력(EC2 중지→시작) 보강.** `services/db.py`: 기동 때 DB 연결 실패 시 영영 '저장 없이 동작'(200 응답만 하고 아무 행도 안 남음)하던 것을 → 요청마다 30초 간격 자동 재연결로 변경(`available()` 이 `init()` 재시도). `infra/docker-compose.aws.yml` api `restart: unless-stopped → always` (EC2 중지 전 `docker compose stop` 해 둔 컨테이너도 재부팅 뒤 자동 기동 → ALB 503 지속 방지). 주소·필드 변동 없음 | 정화: EC2 재시작 후 데이터 미수신 보고 |
 | 2026-10-07 | **버그 수정 — windows 저장 0건.** 앱(0.1.1)이 session_id·window_id 를 UUID 36자로 보내는데 DB 칸이 varchar(32) 라 sessions INSERT 가 실패 → windows·self_reports 행이 저장 안 됨(서버는 로그만 남기고 200 응답). `004_widen_ids.sql` 로 sessions.session_id·windows.window_id/session_id·self_reports.window_id 를 varchar(64) 로 확장. `WindowIn`·`SelfReportIn` ID 에 max_length=64 (넘으면 422). `scripts/smoke.py` 가 앱과 같은 UUID ID 를 쓰도록 변경(짧은 ses_/win_ 로 통과해서 못 잡았음) + 윈도우 cp949 콘솔 이모지 출력 오류 수정 | 혜윤: 모델 데이터 미적재 |
 | 2026-10-06 (오후) | `scripts/smoke.py` 추가 — 표준 라이브러리만으로 헬스·설정·등록·혜윤 샘플 추론(74.1)·활동0·멱등·라벨·이벤트 배치 8개 검사 (`python scripts/smoke.py <주소>`). `/v1/enroll.cp_number` 형식 검증(`CP-` + 대문자·숫자, ≤12자) → 길이 초과 시 500 대신 422. 정화 `user_medication`·Catalog 3 테이블을 `003_user_medication.sql` 로 분리(RDS 덤프와 동일 구조, 로컬 compose `MODEL_URL` 기본값 복구) | 1차 통합 QA |
 | 2026-10-06 | **v6.2** `windows.app_tab`(앱 탭 구분, `002_app_tab.sql`)·이벤트 `minihome_closed` 추가. 정화 `/v1/catalog/search`(약·건기식 통합 검색, [Planned] 2차) 명세 등록 — AWS 배포본(ALB)에 이미 포함. 주소 33 → 34개. 1차 주소·필드 변동 없음 | 채원 app_category 확인, 정화 AWS 배포본 대조 |
