@@ -1,6 +1,6 @@
 """M07 회원번호 등록 및 Bearer 토큰 발급."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..services import db
@@ -29,6 +29,7 @@ class EnrollOut(BaseModel):
 @router.post(
     "/enroll",
     response_model=EnrollOut,
+    status_code=status.HTTP_201_CREATED,
     summary="회원번호 등록 및 Bearer 토큰 발급",
 )
 def enroll(body: EnrollIn):
@@ -41,38 +42,36 @@ def enroll(body: EnrollIn):
     token = generate_token()
     token_hash = hash_token(token)
 
-    try:
-        with db.conn() as conn:
-            row = conn.execute(
-                """
-                INSERT INTO users (
-                    cp_number,
-                    device_id,
-                    app_version,
-                    token_hash
-                )
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (cp_number)
-                DO UPDATE SET
-                    token_hash = EXCLUDED.token_hash,
-                    last_seen_at = now()
-                RETURNING user_id
-                """,
-                (
-                    body.cp_number,
-                    body.device_id,
-                    body.app_version,
-                    token_hash,
-                ),
-            ).fetchone()
+    with db.conn() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO users (
+                cp_number,
+                device_id,
+                app_version,
+                os,
+                token_hash
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (cp_number) DO NOTHING
+            RETURNING user_id
+            """,
+            (
+                body.cp_number,
+                body.device_id,
+                body.app_version,
+                body.os,
+                token_hash,
+            ),
+        ).fetchone()
 
-        return EnrollOut(
-            user_id=str(row[0]),
-            access_token=token,
-        )
-
-    except Exception:
+    if row is None:
         raise HTTPException(
-            status_code=500,
-            detail="Enrollment failed",
+            status_code=409,
+            detail="CP number already enrolled",
         )
+
+    return EnrollOut(
+        user_id=str(row[0]),
+        access_token=token,
+    )
