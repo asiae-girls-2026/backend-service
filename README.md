@@ -63,7 +63,7 @@ DB 통합 테스트: compose 켠 뒤 `DATABASE_URL=postgresql://carepong:carepon
 
 1. EC2(Ubuntu)에 Docker 설치, 저장소 clone
 2. 저장소 루트에 `.env` 생성 — `DATABASE_URL=postgresql://<user>:<pw>@<rds-endpoint>:5432/carepong` (저장소에 올리지 않는다, `.gitignore` 됨)
-   공감챗(10/14): `BEDROCK_PROMPT_ARN=arn:aws:bedrock:ap-northeast-2:<계정>:prompt/<id>:<ver>` 추가. EC2 인스턴스 역할(또는 `.env` 의 `AWS_ACCESS_KEY_ID/SECRET`)에 `bedrock:InvokeModel`·`bedrock:GetPrompt` 권한. 비우면 `/v1/chat` 503 → 앱 규칙 응답
+   공감챗(10/14): `BEDROCK_PROMPT_ARN=arn:aws:bedrock:ap-northeast-2:<계정>:prompt/<id>:<ver>` 추가. EC2 인스턴스 역할(또는 `.env` 의 `AWS_ACCESS_KEY_ID/SECRET`)에 `bedrock:InvokeModel`·`bedrock:GetPrompt`·`bedrock:RenderPrompt` 권한(RenderPrompt 없으면 AccessDenied "not authorized … with a prompt resource"). 비우면 `/v1/chat` 503 → 앱 규칙 응답
 3. `docker compose -f infra/docker-compose.yml -f infra/docker-compose.aws.yml up -d --build`
    → api 가 EC2:80 을 받고 켜지면서 RDS 에 마이그레이션 적용. model·db 포트는 외부에 안 열림
 4. ALB: 타겟 EC2:80, 헬스체크 `/health`, TLS 는 ALB/ACM (Caddy 없음)

@@ -2,7 +2,7 @@
 1차(10/14): 대화 이력 없이 1건 단발. 위기 키워드는 앱(core/empathy.ts isCrisis)이 먼저 걸러 서버에 안 보낸다.
 서버가 503/502/429 를 주면 앱은 기존 규칙 기반 replyEmpathy 로 폴백 — 사용자에겐 끊김 없음.
 원문 저장·로깅 없음. 이벤트 집계는 앱이 기존대로 /events/batch 의 chat_message{len, keyword_hit, source} 로.
-하루 상한(CHAT_DAILY_MAX, 기본 60/사용자)은 과금 캡 — 메모리 카운터(워커 1개 전제, policy 상태와 같은 방식)."""
+하루 상한(CHAT_DAILY_MAX, 기본 30/사용자)은 과금 캡 — 메모리 카운터(워커 1개 전제, policy 상태와 같은 방식)."""
 import os, logging
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Header, HTTPException
@@ -14,7 +14,7 @@ log = logging.getLogger("carepong.chat")
 router = APIRouter(tags=["공감챗 (M05)"])
 
 KST = timezone(timedelta(hours=9))
-DAILY_MAX = int(os.environ.get("CHAT_DAILY_MAX", "60"))
+DAILY_MAX = int(os.environ.get("CHAT_DAILY_MAX", "30"))
 _daily: dict[str, tuple[str, int]] = {}   # user → (KST 날짜, 오늘 호출 수)
 
 class ChatIn(BaseModel):
