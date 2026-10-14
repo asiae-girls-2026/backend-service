@@ -2,7 +2,7 @@
 http://localhost:8000/docs 에서 Swagger로 확인.
 
 상태 표기 규칙 (summary 접두어)
-  [Stub]    1차(10/7) 범위. 주소·필드 확정 대상. 응답은 고정 가짜값(감지는 실추론), DB 미구현
+  [Stub]    일부 API의 임시 구현 표시. 실제 구현 여부는 각 라우터 기준으로 확인
   [Draft]   설계 미확정. 담당자 확정 대기
   [Planned] 1차 미포함. 2차(10/26~)에서 구현
 """
@@ -31,6 +31,7 @@ from .routers import (
     da,
     catalog,
     chat,
+    raw,
 )
 
 
@@ -136,7 +137,7 @@ class Health(BaseModel):
 @app.get(
     "/health",
     tags=["운영"],
-    summary="[Stub] 서버 생존 확인",
+    summary="서버 생존 확인",
     response_model=Health,
 )
 def health():
@@ -160,5 +161,6 @@ for r in (
     da,
     catalog,
     chat,
+    raw,
 ):
     app.include_router(r.router, prefix="/v1")
