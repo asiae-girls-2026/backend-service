@@ -49,11 +49,11 @@
 
 - 서버: `api/app/services/bedrock.py`(Converse, `modelId`=프롬프트 ARN, `promptVariables.user_message`) + `api/app/routers/chat.py`(`POST /v1/chat`). `run_in_threadpool` 로 호출해 워커 1개에서 `/v1/windows` 를 막지 않음. 원문 로깅 없음(길이·지연·토큰 수만). 하루 상한 메모리 카운터.
 - 앱: `main/api.ts postChat` → `main/index.ts` IPC `api:chat` → `preload careApi.chat` → `renderer/ChatApp.tsx send()`. 순서: `replyEmpathy()` 로 위기 판정 → 위기면 서버 미호출·고정 안내 / 아니면 서버 호출 → 실패·오프라인이면 규칙 응답 폴백. `chat_message` 이벤트에 `source: rule|bedrock` 추가.
-- 환경변수(EC2 `.env`): `BEDROCK_PROMPT_ARN`(필수), `BEDROCK_REGION`(기본 ap-northeast-2), `CHAT_DAILY_MAX`(기본 60). 자격증명은 raw.py 의 S3 와 같은 경로(인스턴스 역할 또는 `.env` 키)에 `bedrock:InvokeModel` + `bedrock:GetPrompt` 추가.
+- 환경변수(EC2 `.env`): `BEDROCK_PROMPT_ARN`(필수), `BEDROCK_REGION`(기본 ap-northeast-2), `CHAT_DAILY_MAX`(기본 60). 자격증명은 raw.py 의 S3 와 같은 경로(인스턴스 역할 또는 `.env` 키)에 `bedrock:InvokeModel` + `bedrock:GetPrompt` + `bedrock:RenderPrompt` 추가 (RenderPrompt 가 빠지면 Converse 가 AccessDenied "Your account is not authorized to invoke this API operation with a prompt resource" — 10/14 실배포에서 확인).
 - 남은 리스크(기록): ALB 가 HTTP 라 대화 원문 평문 전송, `X-User-Id` 미검증(하루 상한이 유일한 과금 캡), 기획서 "모든 데이터 로컬" 문구와 불일치 → 연우님 고지 문구 합의 필요.
 
 ### 배포 후 확인 (EC2 또는 아무 PC)
 ```
 curl -s -X POST http://carepong-alb-405431408.ap-northeast-2.elb.amazonaws.com/v1/chat   -H "Content-Type: application/json" -H "X-User-Id: CP-TEST0001"   -d '{"message":"동료가 내 아이디어를 자기 거처럼 발표했어","client_event_id":"t1"}'
 ```
-200 + 한국어 공감 답변이면 성공. 503 이면 `.env` 의 ARN 누락, 502 면 IAM 권한·리전·ARN 오타 (api 로그 `carepong.bedrock` 경고에 원인 표시).
+200 + 한국어 공감 답변이면 성공 (10/14 11시 실서버 확인: 3건 200, 1.8~2.1초, `model_id` 끝 `:1`). 503 이면 `.env` 의 ARN 누락 — `.env` 를 고친 뒤엔 `docker compose … up -d --force-recreate api` (restart 는 예전 env 를 그대로 씀). 502 면 IAM 권한·리전·ARN 오타 (api 로그 `carepong.bedrock` 경고에 원인 표시). 프롬프트 버전 교체는 ARN 끝 `:1` → `:2` 만 바꾸고 force-recreate.
