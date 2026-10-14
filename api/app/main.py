@@ -30,6 +30,7 @@ from .routers import (
     ppg,
     da,
     catalog,
+    chat,
 )
 
 
@@ -77,6 +78,13 @@ TAGS = [
     {
         "name": "모델 설정",
         "description": "앱 정책값(컷·상한·방해금지·간격 기본값). 가중치는 서버에만. 1.0",
+    },
+    {
+        "name": "공감챗 (M05)",
+        "description": (
+            "마음관리 챗 1건 → Bedrock Prompt Management 프롬프트(혜윤 10/13 1차 단독 버전) 응답. "
+            "원문 저장 없음. 503/502/429 면 앱이 규칙 응답으로 폴백. 1차(10/14)"
+        ),
     },
     {
         "name": "텔레그램 봇",
@@ -151,5 +159,6 @@ for r in (
     ppg,
     da,
     catalog,
+    chat,
 ):
     app.include_router(r.router, prefix="/v1")
