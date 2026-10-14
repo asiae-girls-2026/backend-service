@@ -53,7 +53,13 @@ def enroll(body: EnrollIn):
                 token_hash
             )
             VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (cp_number) DO NOTHING
+            ON CONFLICT (cp_number) DO UPDATE
+                SET token_hash  = EXCLUDED.token_hash,
+                    device_id   = EXCLUDED.device_id,
+                    app_version = EXCLUDED.app_version,
+                    os          = EXCLUDED.os
+                WHERE users.token_hash IS NULL
+                   OR users.device_id = EXCLUDED.device_id
             RETURNING user_id
             """,
             (
