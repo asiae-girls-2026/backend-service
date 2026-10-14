@@ -2,6 +2,7 @@
 
 | 날짜 | 변경 | 사유 |
 |---|---|---|
+| 2026-10-14 (오후) | 공감챗 하루 상한 `CHAT_DAILY_MAX` 기본 60 → **30**/사용자. 프롬프트 버전 2(혜윤: 존댓말 통일·이모지 제거·2문장) 서버 반영 — ARN 끝 `:2`, 코드 변경 없음. 실서버 확인 4건 200 | 과금 캡 축소 결정 |
 | 2026-10-14 | **공감챗 LLM 1차 연동 — `POST /v1/chat` 추가.** 앱이 마음관리 챗 메시지 1건을 보내면 `services/bedrock.py` 가 Bedrock Prompt Management 프롬프트(`BEDROCK_PROMPT_ARN`, 혜윤 10/13 1차 단독 버전·Claude Haiku 4.5)를 Converse 로 호출해 답변 회신. 원문 저장·로깅 없음. ARN 미설정 503 · Bedrock 실패 502 · 하루 상한(`CHAT_DAILY_MAX` 기본 60) 429 → 앱은 기존 규칙 응답(`empathy.ts`)으로 폴백, 위기 키워드는 앱이 서버에 안 보냄. `boto3` 의존성 추가, compose 에 `BEDROCK_*`·`AWS_*` 전달. 테스트 5개. 주소 34 → 35개 | 팀 결정: 1차 배포에 Bedrock 포함 (10/14 아침) |
 | 2026-10-13 | **Bedrock 공감챗 — 1차(10/14) 미포함 결정.** 현황·제외 이유·AWS 콘솔 선행작업(모델 액세스·IAM)·2차 `/v1/chat` 연동 설계를 `docs/bedrock-chat-status.md` 로 문서화. 코드·주소·필드 변동 없음. ⚠ ML 인계서(10/13)의 `/v1/raw/batches` 가 이 저장소에 없음 → 배포 전 EC2 실제 코드 확인 | 혜윤 Bedrock 프롬프트 설계(10/13), 정화 Bedrock 세팅 요청 |
 | 2026-10-12 | **서버 복원력(EC2 중지→시작) 보강.** `services/db.py`: 기동 때 DB 연결 실패 시 영영 '저장 없이 동작'(200 응답만 하고 아무 행도 안 남음)하던 것을 → 요청마다 30초 간격 자동 재연결로 변경(`available()` 이 `init()` 재시도). `infra/docker-compose.aws.yml` api `restart: unless-stopped → always` (EC2 중지 전 `docker compose stop` 해 둔 컨테이너도 재부팅 뒤 자동 기동 → ALB 503 지속 방지). 주소·필드 변동 없음 | 정화: EC2 재시작 후 데이터 미수신 보고 |

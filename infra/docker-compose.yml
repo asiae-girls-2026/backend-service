@@ -17,7 +17,7 @@ services:
       # 공감챗(Bedrock). ARN 비우면 /v1/chat 503 → 앱 규칙 응답. 자격증명은 EC2 인스턴스 역할 또는 .env 의 AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY
       BEDROCK_PROMPT_ARN: ${BEDROCK_PROMPT_ARN:-}
       BEDROCK_REGION: ${BEDROCK_REGION:-ap-northeast-2}
-      CHAT_DAILY_MAX: ${CHAT_DAILY_MAX:-60}
+      CHAT_DAILY_MAX: ${CHAT_DAILY_MAX:-30}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     ports:
