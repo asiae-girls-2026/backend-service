@@ -88,7 +88,7 @@ def test_bedrock_variables(monkeypatch):
     assert bedrock.reply("안녕", "사용자: a\n펫: b")["model_id"] == "X:3"
     assert fc.kw["promptVariables"] == {"user_message": {"text": "안녕"}, "history": {"text": "사용자: a\n펫: b"}}
     bedrock.reply("안녕")
-    assert fc.kw["promptVariables"]["history"] == {"text": "(없음)"}
+    assert fc.kw["promptVariables"]["history"] == {"text": bedrock.NO_HISTORY} and "처음 만났다는 말은 하지" in bedrock.NO_HISTORY
     monkeypatch.setattr(bedrock, "HISTORY_VAR", "")
     bedrock.reply("안녕", "x")
     assert "history" not in fc.kw["promptVariables"]

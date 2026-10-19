@@ -14,6 +14,8 @@ REGION = os.environ.get("BEDROCK_REGION", os.environ.get("AWS_REGION", "ap-north
 CONNECT_TIMEOUT = float(os.environ.get("BEDROCK_CONNECT_TIMEOUT", "3"))
 READ_TIMEOUT = float(os.environ.get("BEDROCK_READ_TIMEOUT", "12"))
 HISTORY_VAR = os.environ.get("BEDROCK_HISTORY_VAR", "history")   # 프롬프트 v3 의 {{history}}. "" 이면 미전송
+# 이력이 없을 때 변수에 넣는 문구. "(없음)" 으로 두면 모델이 "방금 처음 만나서 이전 대화가 없다" 고 말해버림(10/19 실서버 관측) → 지시문으로 대체
+NO_HISTORY = "(이전 대화 없음. 이번 사용자 메시지만 보고 답하고, 이전 대화가 없다거나 처음 만났다는 말은 하지 마세요.)"
 
 _client = None
 
@@ -33,12 +35,12 @@ def _get_client():
 def reply(user_message: str, history_text: str = "") -> dict | None:
     """프롬프트 변수 {{user_message}}(+ {{history}}) 를 채워 호출. 성공 시 {text, model_id, latency_ms, usage}, 실패 시 None.
     history_text 는 routers/chat.py 가 '사용자: …
-펫: …' 줄로 만든 최근 대화. 없으면 '(없음)' 을 넣어 변수 누락을 피한다."""
+펫: …' 줄로 만든 최근 대화. 없으면 NO_HISTORY 지시문을 넣어 변수 누락을 피한다."""
     if not enabled():
         return None
     variables = {"user_message": {"text": user_message}}
     if HISTORY_VAR:
-        variables[HISTORY_VAR] = {"text": history_text or "(없음)"}
+        variables[HISTORY_VAR] = {"text": history_text or NO_HISTORY}
     t0 = time.monotonic()
     try:
         r = _get_client().converse(modelId=PROMPT_ARN, promptVariables=variables)
