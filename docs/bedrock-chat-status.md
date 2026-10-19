@@ -57,3 +57,24 @@
 curl -s -X POST http://carepong-alb-405431408.ap-northeast-2.elb.amazonaws.com/v1/chat   -H "Content-Type: application/json" -H "X-User-Id: CP-TEST0001"   -d '{"message":"동료가 내 아이디어를 자기 거처럼 발표했어","client_event_id":"t1"}'
 ```
 200 + 한국어 공감 답변이면 성공 (10/14 11시 실서버 확인: 3건 200, 1.8~2.1초, `model_id` 끝 `:1`). 503 이면 `.env` 의 ARN 누락 — `.env` 를 고친 뒤엔 `docker compose … up -d --force-recreate api` (restart 는 예전 env 를 그대로 씀). 502 면 IAM 권한·리전·ARN 오타 (api 로그 `carepong.bedrock` 경고에 원인 표시). 프롬프트 버전 교체는 ARN 끝 `:1` → `:2` 만 바꾸고 force-recreate.
+
+## E. 2차 품질 개선 (10/19, 혜윤 이슈 3건 — `issues/20261019-01`)
+
+| 이슈 | 원인 | 서버 | 앱(연우, 0.3.3) | 프롬프트(혜윤) |
+|---|---|---|---|---|
+| ① 맥락 끊김 | 매 호출에 메시지 1건만 보내 봇이 과거를 못 봄 | `history[]`(최대 10개=5턴) 받아 `{{history}}` 변수로 전달. 저장·로깅 없음 | 마음관리 대화를 로컬 저장(저장 시각 포함, 24h 뒤 삭제 — 앱 켜둔 채로도 주기 검사), 호출 때 최근 5턴 동봉 | v3: 전문 + `[최근 대화] {{history}}` / `[사용자 메시지] {{user_message}}` |
+| ② 마무리 못 알아챔 | 프롬프트에 종료 규칙 없음 | 없음 | 없음 | v3 규칙 2번 |
+| ③ 난타에 하트 | 하트는 **앱**이 서버 호출 전에 매김. 앱 판정이 자모만 거르고 "ㅈㄷ9ㅁ려"는 통과 | `gibberish.is_meaningless` → Bedrock 미호출, `source=filter` + 고정 안내문 | `earnsHeart` 를 혜윤 필터 규칙(낱자 비율 ≥0.5 등)으로 교체, 응답 `source=filter` 면 하트 X · `chat_message.source=filter` | 없음 |
+
+- Converse 로 프롬프트 ARN 을 부를 때 `messages` 를 덧붙이는 것도 가능하다고 AWS 문서에 있으나(2026-10 확인), 변수 방식이 변경이 작아 `{{history}}` 로 결정.
+- `promptVariables` 에 프롬프트에 없는 변수를 보내거나 있는 변수를 빼면 어떻게 되는지는 문서에 없음 → **서버 배포와 `.env` ARN `:3` 교체를 같은 force-recreate 에서** 한다. 문제 시 롤백: ARN `:2` + `BEDROCK_HISTORY_VAR=` (빈 값).
+- 프롬프트 v3 ARN: `arn:aws:bedrock:ap-northeast-2:915062473810:prompt/OFGNN9OZFU:3` (민서 10/19 콘솔 등록). 콘솔 테스트에서 "다행이야" 같은 반말 1회 관측 — 재발하면 혜윤이 [역할] 문구 강화.
+- 비용: 5턴 동봉 시 호출당 입력 수백 토큰 증가, Haiku 4.5 입력 단가 기준 월 $1 미만.
+
+### 배포 (EC2)
+```
+cd ~/backend-service && git pull
+# .env: BEDROCK_PROMPT_ARN=...prompt/OFGNN9OZFU:3
+sudo docker compose -f infra/docker-compose.yml -f infra/docker-compose.aws.yml up -d --build --force-recreate api
+```
+확인 3건(ALB 대상): (a) 필터 — `{"message":"ㅈㄷ9ㅁ려",…}` → 200 `source:"filter"`. (b) 이력 — `history` 2개 + "고마워 이제 괜찮아졌어" → 질문 없이 인사로 끝남. (c) 옛 앱 형식(history 없음) → 200 `source:"bedrock"`, `model_id` 끝 `:3`.

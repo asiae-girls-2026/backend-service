@@ -18,6 +18,8 @@ services:
       BEDROCK_PROMPT_ARN: ${BEDROCK_PROMPT_ARN:-}
       BEDROCK_REGION: ${BEDROCK_REGION:-ap-northeast-2}
       CHAT_DAILY_MAX: ${CHAT_DAILY_MAX:-30}
+      CHAT_FILTER_REPLY: ${CHAT_FILTER_REPLY:-하고 싶은 말을 조금만 더 적어 주실래요?}   # 난타 입력 고정 안내문 (10/19)
+      BEDROCK_HISTORY_VAR: ${BEDROCK_HISTORY_VAR:-history}   # 프롬프트 v3 {{history}} 변수명. 빈 값이면 미전송(v2 롤백용)
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     ports:

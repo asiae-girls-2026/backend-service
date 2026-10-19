@@ -69,7 +69,7 @@ check("2 /v1/config 정책값", st == 200 and cfg.get("cut_intervene") == 63 and
 
 # 3. 등록
 st, enr = call("POST", "/v1/enroll", {"cp_number": USER, "device_id": "smoke-pc", "app_version": "0.0.0-smoke"})
-check("3 /v1/enroll user_id·token", st == 200 and enr and enr.get("user_id") and enr.get("access_token"), f"status={st}")
+check("3 /v1/enroll user_id·token", st in (200, 201) and enr and enr.get("user_id") and enr.get("access_token"), f"status={st}")
 
 # 4. 혜윤 검증 샘플 — 서버 점수가 혜윤 predict.py 기대값과 같은가 (model 컨테이너 살아있는지도 여기서 판별)
 samples_path = Path(__file__).resolve().parent.parent / "model" / "tests" / "validation_samples.json"

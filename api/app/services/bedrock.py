@@ -2,7 +2,9 @@
 프롬프트 본문·모델·temperature 는 Bedrock 콘솔 쪽에 있고 서버는 ARN 만 안다 (BEDROCK_PROMPT_ARN). 바꿀 때 서버 재배포 없음.
 실패(권한·시간초과·리전)는 None 반환 → 호출 측(routers/chat.py)이 5xx 로 돌려주고 앱이 규칙 기반 응답으로 폴백.
 자격증명은 boto3 기본 체인 (EC2 인스턴스 역할 또는 .env 의 AWS_ACCESS_KEY_ID/SECRET) — raw.py 의 S3 와 같은 자리에 bedrock:InvokeModel 권한 필요.
-사용자 메시지 원문은 로그·DB 어디에도 남기지 않는다 (README 원칙)."""
+사용자 메시지 원문은 로그·DB 어디에도 남기지 않는다 (README 원칙).
+10/19 맥락 유지(혜윤 이슈①): 앱이 보낸 최근 대화를 history_text 로 받아 프롬프트 변수 {{history}} 에 채운다 (프롬프트 v3 부터 변수 존재).
+  변수 이름은 BEDROCK_HISTORY_VAR (기본 history). 빈 문자열로 두면 변수를 안 보냄 → v2 이하 프롬프트로 되돌릴 때 사용."""
 import os, time, logging
 
 log = logging.getLogger("carepong.bedrock")
@@ -11,6 +13,7 @@ PROMPT_ARN = os.environ.get("BEDROCK_PROMPT_ARN", "")
 REGION = os.environ.get("BEDROCK_REGION", os.environ.get("AWS_REGION", "ap-northeast-2"))
 CONNECT_TIMEOUT = float(os.environ.get("BEDROCK_CONNECT_TIMEOUT", "3"))
 READ_TIMEOUT = float(os.environ.get("BEDROCK_READ_TIMEOUT", "12"))
+HISTORY_VAR = os.environ.get("BEDROCK_HISTORY_VAR", "history")   # 프롬프트 v3 의 {{history}}. "" 이면 미전송
 
 _client = None
 
@@ -27,16 +30,18 @@ def _get_client():
                                              retries={"max_attempts": 1}))
     return _client
 
-def reply(user_message: str) -> dict | None:
-    """프롬프트 변수 {{user_message}} 하나를 채워 호출. 성공 시 {text, model_id, latency_ms, usage}, 실패 시 None."""
+def reply(user_message: str, history_text: str = "") -> dict | None:
+    """프롬프트 변수 {{user_message}}(+ {{history}}) 를 채워 호출. 성공 시 {text, model_id, latency_ms, usage}, 실패 시 None.
+    history_text 는 routers/chat.py 가 '사용자: …
+펫: …' 줄로 만든 최근 대화. 없으면 '(없음)' 을 넣어 변수 누락을 피한다."""
     if not enabled():
         return None
+    variables = {"user_message": {"text": user_message}}
+    if HISTORY_VAR:
+        variables[HISTORY_VAR] = {"text": history_text or "(없음)"}
     t0 = time.monotonic()
     try:
-        r = _get_client().converse(
-            modelId=PROMPT_ARN,
-            promptVariables={"user_message": {"text": user_message}},
-        )
+        r = _get_client().converse(modelId=PROMPT_ARN, promptVariables=variables)
         parts = r.get("output", {}).get("message", {}).get("content", [])
         text = "".join(p.get("text", "") for p in parts).strip()
         if not text:
