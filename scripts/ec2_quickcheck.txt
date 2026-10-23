@@ -1,0 +1,19 @@
+rm -f /tmp/q.py
+echo "import os,psycopg" >> /tmp/q.py
+echo "c=psycopg.connect(os.environ['DATABASE_URL'])" >> /tmp/q.py
+echo "K=\" AT TIME ZONE 'Asia/Seoul','MM-DD HH24:MI'\"" >> /tmp/q.py
+echo "print('== 1. tables / rows ==')" >> /tmp/q.py
+echo "s='SELECT tablename FROM pg_tables WHERE schemaname=%s ORDER BY 1'" >> /tmp/q.py
+echo "for (t,) in c.execute(s,('public',)).fetchall():" >> /tmp/q.py
+echo "    print(t.ljust(22), c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0])" >> /tmp/q.py
+echo "print('== 2. latest 15 windows ==')" >> /tmp/q.py
+echo "s='SELECT u.cp_number, to_char(w.received_at'+K+') t, w.condition_score,'" >> /tmp/q.py
+echo "s+=' w.level, w.prompt_type, w.model_version FROM windows w'" >> /tmp/q.py
+echo "s+=' JOIN users u USING(user_id) ORDER BY w.received_at DESC LIMIT 15'" >> /tmp/q.py
+echo "for r in c.execute(s): print(r)" >> /tmp/q.py
+echo "print('== 3. per user ==')" >> /tmp/q.py
+echo "s='SELECT u.cp_number, u.app_version, COUNT(w.window_id) n,'" >> /tmp/q.py
+echo "s+=' to_char(MAX(w.received_at)'+K+') last FROM users u'" >> /tmp/q.py
+echo "s+=' LEFT JOIN windows w USING(user_id) GROUP BY 1,2 ORDER BY n DESC'" >> /tmp/q.py
+echo "for r in c.execute(s): print(r)" >> /tmp/q.py
+sudo docker exec -i $(sudo docker ps -q --filter name=api) python - < /tmp/q.py
