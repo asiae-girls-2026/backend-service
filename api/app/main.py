@@ -30,8 +30,10 @@ from .routers import (
     ppg,
     da,
     catalog,
+    medications_live,
     chat,
     raw,
+    medication_chat,
 )
 
 
@@ -160,7 +162,9 @@ for r in (
     ppg,
     da,
     catalog,
+    medications_live,
     chat,
     raw,
+    medication_chat,
 ):
     app.include_router(r.router, prefix="/v1")

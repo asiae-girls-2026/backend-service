@@ -1,0 +1,163 @@
+import gzip
+import json
+import subprocess
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+BASE = Path("/home/ubuntu/backend-service/etl")
+RAW = BASE / "data/med_ingredients"
+IDS = Path("/tmp/carepong_med_item_seqs.json")
+
+EXPECTED = 17273
+
+with IDS.open(encoding="utf-8") as f:
+    product_ids = set(map(str, json.load(f)))
+
+rows = []
+seen = set()
+matched_products = set()
+
+for path in sorted(RAW.glob("page_*.json.gz")):
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        data = json.load(f)
+
+    body = data.get("response", data)["body"]
+    items = body.get("items") or []
+
+    if isinstance(items, dict):
+        items = items.get("item", [])
+    if isinstance(items, dict):
+        items = [items]
+
+    for item in items:
+        item_seq = str(item.get("ITEM_SEQ") or "").strip()
+
+        if item_seq not in product_ids:
+            continue
+
+        mtral_sn = str(item.get("MTRAL_SN") or "").strip()
+        tamt_seq = str(item.get("TAMT_SEQ") or "").strip()
+        name = str(item.get("MTRAL_NM") or "").strip()
+
+        if not item_seq or not mtral_sn or not tamt_seq or not name:
+            raise RuntimeError(
+                f"필수값 누락: ITEM_SEQ={item_seq}"
+            )
+
+        key = (item_seq, mtral_sn, tamt_seq)
+        if key in seen:
+            raise RuntimeError(f"중복 원천 키: {key}")
+        seen.add(key)
+        matched_products.add(item_seq)
+
+        qnt = item.get("QNT")
+        qnt_raw = None if qnt is None else str(qnt).strip()
+        amount = None
+
+        if qnt_raw:
+            try:
+                amount = str(Decimal(qnt_raw.replace(",", "")))
+            except InvalidOperation:
+                pass
+
+        rows.append({
+            "item_seq": item_seq,
+            "mtral_sn": mtral_sn,
+            "tamt_seq": tamt_seq,
+            "name": name,
+            "code": item.get("MTRAL_CODE"),
+            "amount": amount,
+            "unit": item.get("INGD_UNIT_CD"),
+            "qnt_raw": qnt_raw,
+        })
+
+print("적재 대상:", len(rows), flush=True)
+print("매칭 의약품:", len(matched_products), flush=True)
+
+if len(rows) != EXPECTED or len(matched_products) != 4741:
+    raise SystemExit("기존 검증 건수와 달라 적재 중단")
+
+db_code = r'''
+import os
+import sys
+import json
+import psycopg
+
+rows = json.load(sys.stdin)
+
+sql = """
+WITH input AS (
+    SELECT *
+    FROM jsonb_to_recordset(%s::jsonb) AS x(
+        item_seq text,
+        mtral_sn text,
+        tamt_seq text,
+        name text,
+        code text,
+        amount numeric,
+        unit text,
+        qnt_raw text
+    )
+),
+inserted AS (
+    INSERT INTO public.med_product_ingredient (
+        med_product_id,
+        ingredient_id,
+        source_ingredient_name,
+        source_code,
+        amount,
+        unit,
+        mapping_status,
+        mtral_sn,
+        tamt_seq,
+        source_qnt_raw
+    )
+    SELECT
+        p.med_product_id,
+        NULL,
+        i.name,
+        i.code,
+        i.amount,
+        i.unit,
+        'REVIEW',
+        i.mtral_sn,
+        i.tamt_seq,
+        i.qnt_raw
+    FROM input i
+    JOIN public.med_product p
+      ON p.item_seq = i.item_seq
+    ON CONFLICT (med_product_id, mtral_sn, tamt_seq)
+    DO NOTHING
+    RETURNING 1
+)
+SELECT count(*) FROM inserted
+"""
+
+with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+    conn.execute("SET lock_timeout = '5s'")
+    conn.execute("SET statement_timeout = '120s'")
+
+    with conn.transaction():
+        count = conn.execute(
+            sql, (json.dumps(rows, ensure_ascii=False),)
+        ).fetchone()[0]
+
+    result = conn.execute("""
+        SELECT count(*),
+               count(DISTINCT med_product_id)
+        FROM public.med_product_ingredient
+    """).fetchone()
+
+    print("이번 신규 INSERT:", count)
+    print("현재 전체 성분 행:", result[0])
+    print("현재 연결 제품:", result[1])
+'''
+
+result = subprocess.run(
+    ["docker", "exec", "-i", "infra-api-1", "python", "-c", db_code],
+    input=json.dumps(rows, ensure_ascii=False),
+    text=True,
+    check=True,
+)
+
+print(result.stdout)

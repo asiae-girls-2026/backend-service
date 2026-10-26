@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+docker exec infra-api-1 mkdir -p /tmp/carepong_ddi_finish_v2
+docker cp /home/ubuntu/backend-service/etl/ddi_finish_v2/. infra-api-1:/tmp/carepong_ddi_finish_v2/ >/dev/null
+exec docker exec -i infra-api-1 python /tmp/carepong_ddi_finish_v2/ddi_finish_admin.py "$@"

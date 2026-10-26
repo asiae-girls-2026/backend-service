@@ -11,3 +11,14 @@ dist/
 # 로컬 로그·데이터
 *.log
 *.csv
+# CarePong local/generated artifacts
+etl/data/
+etl/reports/
+*.bak
+*.bak_*
+*.bak.*
+*.bak_indent
+*.damaged_backup
+
+# CarePong local secrets, raw data and backups
+etl/carepong_secrets.py
