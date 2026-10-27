@@ -1,0 +1,9 @@
+[Unit]
+Description=CarePong medication occurrence generator
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/backend-service/infra
+ExecStart=/usr/bin/docker compose --env-file /home/ubuntu/backend-service/.env -f /home/ubuntu/backend-service/infra/docker-compose.yml -f /home/ubuntu/backend-service/infra/docker-compose.aws.yml exec -T api python -m app.jobs.generate_medication_occurrences --days 30

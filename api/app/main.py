@@ -121,7 +121,7 @@ async def lifespan(app):
 app = FastAPI(
     lifespan=lifespan,
     title="CarePong API",
-    version="0.2.0",
+    version="0.3.0",
     description=(
         "케어퐁 서버 API 명세. "
         "summary 접두어 [Stub]/[Draft]/[Planned]로 상태 표시."

@@ -3,6 +3,7 @@ __pycache__/
 .env
 .env.*
 .pytest_cache/
+.venv-etl/
 # PyInstaller 산출물 (수집기 exe)
 build/
 dist/

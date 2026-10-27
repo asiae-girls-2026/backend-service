@@ -1,0 +1,10 @@
+[Unit]
+Description=Generate CarePong medication occurrences daily
+
+[Timer]
+OnCalendar=*-*-* 00:10:00 Asia/Seoul
+Persistent=true
+Unit=carepong-medication-occurrences.service
+
+[Install]
+WantedBy=timers.target

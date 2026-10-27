@@ -1,8 +1,8 @@
 import gzip
+import argparse
 import json
 import math
 import os
-import sys
 import time
 import urllib.error
 import urllib.parse
@@ -118,21 +118,28 @@ print("예상 페이지:", pages, flush=True)
 if total <= 0:
     raise SystemExit("데이터가 없습니다.")
 
-limit = int(sys.argv[1]) if len(sys.argv) > 1 else pages
-limit = min(limit, pages)
+parser = argparse.ArgumentParser()
+parser.add_argument("legacy_pages", nargs="?", type=int)
+parser.add_argument("--pages", type=int)
+parser.add_argument("--refresh", action="store_true")
+args = parser.parse_args()
+requested = args.pages if args.pages is not None else args.legacy_pages
+limit = min(requested or pages, pages)
+if limit < 1:
+    parser.error("페이지 수는 1 이상이어야 합니다.")
 
 processed = 0
 
 for page in range(1, limit + 1):
     target = OUT / f"page_{page:05d}.json.gz"
 
-    if target.exists():
+    if target.exists() and not args.refresh:
         with gzip.open(target, "rt", encoding="utf-8") as f:
             data = json.load(f)
         status = "SKIP"
     else:
         data = first if page == 1 else fetch(page)
-        status = "SAVE"
+        status = "REFRESH" if target.exists() else "SAVE"
 
     saved_total, items = parse(data, page)
 
@@ -148,7 +155,7 @@ for page in range(1, limit + 1):
             f"total={saved_total}/{total}"
         )
 
-    if status == "SAVE":
+    if status != "SKIP":
         temp = target.with_suffix(".tmp")
         with gzip.open(temp, "wt", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
@@ -162,7 +169,7 @@ for page in range(1, limit + 1):
         flush=True
     )
 
-    if status == "SAVE":
+    if status != "SKIP":
         time.sleep(0.2)
 
 print("수집 처리 완료:", processed, "건")

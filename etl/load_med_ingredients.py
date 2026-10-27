@@ -1,14 +1,18 @@
 import gzip
+import argparse
 import json
-import subprocess
+import os
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-BASE = Path("/home/ubuntu/backend-service/etl")
+BASE = Path(os.environ.get("CAREPONG_ETL_DIR", Path(__file__).resolve().parent))
 RAW = BASE / "data/med_ingredients"
 IDS = Path("/tmp/carepong_med_item_seqs.json")
 
-EXPECTED = 17273
+parser = argparse.ArgumentParser()
+parser.add_argument("--min-rows", type=int, default=10000)
+parser.add_argument("--min-products", type=int, default=4000)
+args = parser.parse_args()
 
 with IDS.open(encoding="utf-8") as f:
     product_ids = set(map(str, json.load(f)))
@@ -74,16 +78,14 @@ for path in sorted(RAW.glob("page_*.json.gz")):
 print("적재 대상:", len(rows), flush=True)
 print("매칭 의약품:", len(matched_products), flush=True)
 
-if len(rows) != EXPECTED or len(matched_products) != 4741:
-    raise SystemExit("기존 검증 건수와 달라 적재 중단")
+if len(rows) < args.min_rows or len(matched_products) < args.min_products:
+    raise SystemExit(
+        "원천 품질 게이트 미달: "
+        f"rows={len(rows)}/{args.min_rows}, "
+        f"products={len(matched_products)}/{args.min_products}"
+    )
 
-db_code = r'''
-import os
-import sys
-import json
 import psycopg
-
-rows = json.load(sys.stdin)
 
 sql = """
 WITH input AS (
@@ -99,8 +101,8 @@ WITH input AS (
         qnt_raw text
     )
 ),
-inserted AS (
-    INSERT INTO public.med_product_ingredient (
+upserted AS (
+    INSERT INTO public.med_product_ingredient AS current (
         med_product_id,
         ingredient_id,
         source_ingredient_name,
@@ -127,10 +129,31 @@ inserted AS (
     JOIN public.med_product p
       ON p.item_seq = i.item_seq
     ON CONFLICT (med_product_id, mtral_sn, tamt_seq)
-    DO NOTHING
-    RETURNING 1
+    DO UPDATE SET
+        source_ingredient_name = EXCLUDED.source_ingredient_name,
+        source_code = EXCLUDED.source_code,
+        amount = EXCLUDED.amount,
+        unit = EXCLUDED.unit,
+        source_qnt_raw = EXCLUDED.source_qnt_raw,
+        ingredient_id = CASE
+            WHEN current.source_ingredient_name IS NOT DISTINCT FROM EXCLUDED.source_ingredient_name
+             AND current.source_code IS NOT DISTINCT FROM EXCLUDED.source_code
+            THEN current.ingredient_id ELSE NULL END,
+        mapping_status = CASE
+            WHEN current.source_ingredient_name IS NOT DISTINCT FROM EXCLUDED.source_ingredient_name
+             AND current.source_code IS NOT DISTINCT FROM EXCLUDED.source_code
+            THEN current.mapping_status ELSE 'REVIEW' END
+    WHERE current.source_ingredient_name IS DISTINCT FROM EXCLUDED.source_ingredient_name
+       OR current.source_code IS DISTINCT FROM EXCLUDED.source_code
+       OR current.amount IS DISTINCT FROM EXCLUDED.amount
+       OR current.unit IS DISTINCT FROM EXCLUDED.unit
+       OR current.source_qnt_raw IS DISTINCT FROM EXCLUDED.source_qnt_raw
+    RETURNING (xmax = 0) AS inserted
 )
-SELECT count(*) FROM inserted
+SELECT
+    count(*) FILTER (WHERE inserted),
+    count(*) FILTER (WHERE NOT inserted)
+FROM upserted
 """
 
 with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
@@ -138,9 +161,9 @@ with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
     conn.execute("SET statement_timeout = '120s'")
 
     with conn.transaction():
-        count = conn.execute(
+        inserted, updated = conn.execute(
             sql, (json.dumps(rows, ensure_ascii=False),)
-        ).fetchone()[0]
+        ).fetchone()
 
     result = conn.execute("""
         SELECT count(*),
@@ -148,16 +171,7 @@ with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         FROM public.med_product_ingredient
     """).fetchone()
 
-    print("이번 신규 INSERT:", count)
+    print("이번 신규 INSERT:", inserted)
+    print("이번 변경 UPDATE:", updated)
     print("현재 전체 성분 행:", result[0])
     print("현재 연결 제품:", result[1])
-'''
-
-result = subprocess.run(
-    ["docker", "exec", "-i", "infra-api-1", "python", "-c", db_code],
-    input=json.dumps(rows, ensure_ascii=False),
-    text=True,
-    check=True,
-)
-
-print(result.stdout)
