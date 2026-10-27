@@ -1,0 +1,17 @@
+[Unit]
+Description=CarePong Prefect data refresh deployment
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/backend-service/etl
+EnvironmentFile=-/home/ubuntu/backend-service/.env
+Environment="CAREPONG_REFRESH_CRON=0 3 * * 0"
+ExecStart=/home/ubuntu/backend-service/.venv-etl/bin/python /home/ubuntu/backend-service/etl/prefect_flows.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
