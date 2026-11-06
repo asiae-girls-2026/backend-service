@@ -1,16 +1,19 @@
 """감지 — 1분 창 피처(16개) 업로드 → model 컨테이너 추론 → 팝업 정책(services/policy) 적용 → windows 테이블 저장 → 회신.
 활동 0 창(SnKeyStrokes + SnMouseAct == 0)도 올린다 — 서버는 모델을 거치지 않고 condition_score=null 을 돌려주고 정책의 자리비움 계산에만 쓴다 (혜윤 Q17).
 수집 시간은 방해금지 창 밖(08:30~18:30)만 — 앱이 수집기를 안 돌리므로 그 시간엔 창이 오지 않는다.
-인증(토큰→user_id)은 D07 확정 후 Depends 로 교체. 지금은 헤더 X-User-Id (없으면 'dev') — 실데이터 수집 전 반드시 교체."""
+인증(토큰→user_id)은 D07 확정 후 Depends 로 교체. 지금은 헤더 X-User-Id (없으면 'dev') — 실데이터 수집 전 반드시 교체.
+(11/6) 키보드 개인화 서빙 훅 — 모델 호출 전에 services/kbd_personalize(혜윤 carepong-automation) 로 shrinkage 개인화 벡터를 만들어
+  /predict 에 standardized=true 로 보낸다. 기준선·직전 30분 창이 없으면 원시 피처로 폴백. KBD_PERSONALIZE=0 이면 끔."""
 from datetime import datetime
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
-import json, logging
-from ..services import policy, model_client, db
+import json, logging, os
+from ..services import policy, model_client, db, kbd_personalize
 log = logging.getLogger("carepong.windows")
 
 router = APIRouter(tags=["감지 (P03)"])
 CUT_INTERVENE_DEFAULT = 63
+KBD_PERSONALIZE = os.environ.get("KBD_PERSONALIZE", "1") != "0"
 FEATURES_16 = ["SnKeyStrokes", "SnChars", "SnSpecialKeys", "SnDirectionKeys", "SnErrorKeys", "SnShortcutKeys", "SnSpaces",
                "CharactersRatio", "ErrorKeyRatio", "SnMouseAct", "SnLeftClicked", "SnRightClicked", "SnDoubleClicked",
                "SnWheel", "SnDragged", "SnMouseDistance"]
@@ -36,7 +39,7 @@ class WindowOut(BaseModel):
     prompt: bool = Field(False, description="true면 앱이 확인 팝업을 띄움")
     prompt_type: str = Field("none", examples=["morning", "spike", "random", "none"],
                              description="spike=과부하(30분 중 20분≥63, 1순위) · morning=첫 활동 30분 뒤 · random=고정 시간 보충(11:30/14:00/15:30/17:00). 모든 팝업 1시간 텀, 하루 5~8회. self-report 의 trigger 에 그대로")
-    model_version: str = Field("unavailable", description="추론에 쓴 모델. 활동 0 창이면 skipped:activity0, 모델 서버 연결 실패면 unavailable")
+    model_version: str = Field("unavailable", description="추론에 쓴 모델. 개인화 벡터로 판정했으면 '+kbd' 접미(예: v1+kbd). 활동 0 창이면 skipped:activity0, 모델 서버 연결 실패면 unavailable")
 
 class WindowBatchIn(BaseModel):
     windows: list[WindowIn] = Field(..., max_length=240, description="오프라인 복구용. 최대 240창(4시간). 팝업은 띄우지 않음")
@@ -47,9 +50,37 @@ def _activity(f: dict) -> float:
 def _cut() -> int:
     return int((model_client.model_info() or {}).get("cut_intervene", CUT_INTERVENE_DEFAULT))
 
-def _score(w: WindowIn) -> dict | None:
+def _user_id(cp: str) -> str | None:
+    """X-User-Id(cp_number) → users.user_id. DB 없거나 실패면 None (개인화 건너뜀, 저장은 _save 가 다시 시도)."""
+    if not db.available(): return None
+    try:
+        return db.ensure_user(cp)
+    except Exception as e:
+        log.warning("ensure_user 실패 (%s): %s", cp, e); return None
+
+def _personalized(uid: str | None) -> list[float] | None:
+    """혜윤 shrinkage 개인화 16-벡터(kbd_personalize.FEATS 순서). 조건이 안 되면 None → 원시 피처로 폴백.
+    kbd_global_seed · kbd_personal_baseline · 직전 30분 windows 를 api 가 쓰는 같은 RDS 연결로 읽는다."""
+    if not KBD_PERSONALIZE or not uid or not db.available():
+        return None
+    try:
+        with db.conn() as c:
+            x = kbd_personalize.get_personalized_features(uid, conn=c)
+        return x if x is not None and len(x) == len(kbd_personalize.FEATS) else None
+    except Exception as e:
+        log.warning("개인화 건너뜀 (%s): %s", uid, e); return None
+
+def _score(w: WindowIn, uid: str | None = None) -> dict | None:
     if _activity(w.features) == 0:
         return None                                  # 활동 0 → 모델 안 거침 (Q17)
+    x = _personalized(uid)
+    if x is not None:
+        pred = model_client.predict(dict(zip(kbd_personalize.FEATS, x)), standardized=True)
+        if pred is None:
+            return None                              # 모델 서버 연결 실패 — 원시 피처로 재시도하면 앱 타임아웃(5초) 넘김
+        if pred.get("score") is not None:
+            pred["model_version"] = (str(pred.get("model_version") or "") + "+kbd")[:16]   # windows.model_version varchar(16)
+            return pred
     feats = {k: w.features.get(k) for k in FEATURES_16}
     pred = model_client.predict(feats)
     return pred if pred and pred.get("score") is not None else None
@@ -62,12 +93,12 @@ def _out(w: WindowIn, pred: dict | None, ptype: str = "none") -> WindowOut:
     return WindowOut(window_id=w.window_id, condition_score=pred["score"], level=pred["level"],
                      prompt=(ptype != "none"), prompt_type=ptype, model_version=pred["model_version"])
 
-def _save(w: WindowIn, pred: dict | None, ptype: str, cp: str) -> None:
+def _save(w: WindowIn, pred: dict | None, ptype: str, cp: str, uid: str | None = None) -> None:
     """windows 1행 저장. DB 없으면 건너뜀. window_id·client_event_id 중복(재전송)은 무시.
     저장 실패는 로그만 남기고 응답은 정상 반환 — 팝업 판단이 저장 때문에 멈추면 안 됨."""
     if not db.available(): return
     try:
-        uid = db.ensure_user(cp); db.ensure_session(w.session_id, uid, w.window_start)
+        uid = uid or db.ensure_user(cp); db.ensure_session(w.session_id, uid, w.window_start)
         with db.conn() as c:
             c.execute("""INSERT INTO windows(window_id, user_id, session_id, window_start, window_sec, features, activity_zero, dnd, app_tab,
                            condition_score, prob, level, model_version, imputed, prompt_type, client_event_id)
@@ -79,16 +110,18 @@ def _save(w: WindowIn, pred: dict | None, ptype: str, cp: str) -> None:
     except Exception as e:
         log.exception("windows 저장 실패 (%s): %s", w.window_id, e)
 
-@router.post("/windows", response_model=WindowOut, summary="[Stub] 1분 창 업로드 → 서버 추론 → 지수·팝업 여부 회신")
+@router.post("/windows", response_model=WindowOut, summary="[Stub] 1분 창 업로드 → 서버 추론(개인화 벡터 우선) → 지수·팝업 여부 회신")
 def post_window(body: WindowIn, x_user_id: str = Header("dev")):
-    pred = _score(body)
+    uid = _user_id(x_user_id)
+    pred = _score(body, uid)
     st = policy.get_state(x_user_id)
     ptype = policy.decide(st, pred["score"] if pred else None, _activity(body.features), body.dnd, body.window_start, _cut())
-    _save(body, pred, ptype, x_user_id)
+    _save(body, pred, ptype, x_user_id, uid)
     return _out(body, pred, ptype)
 
 @router.post("/windows/batch", response_model=list[WindowOut], summary="[Stub] 창 여러 개 업로드 (복구 시, 최대 240). 팝업 없음")
 def post_windows(body: WindowBatchIn, x_user_id: str = Header("dev")):
+    """복구 업로드는 과거 창이라 '직전 30분' 기준 개인화가 맞지 않음 → 원시 피처로만 판정 (uid 안 넘김)."""
     st = policy.get_state(x_user_id); cut = _cut(); out = []
     for w in sorted(body.windows, key=lambda x: x.window_start):
         pred = _score(w)

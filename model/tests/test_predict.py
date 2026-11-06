@@ -26,3 +26,16 @@ def test_all_missing_equals_median():
 def test_boundary_62_6_is_observe_not_intervene():
     # 정수 반올림하면 63→intervene 으로 뒤집히는 경계 — 소수 1자리 유지해야 DA 와 일치
     out = P.predict(SAMPLES[0]["input"]); assert out["score"] == 62.6 and out["level"] == "observe"
+
+
+def test_standardized_zero_vector_equals_raw_mean():
+    """z=0 벡터(=전체 평균)는 원시 평균 벡터와 같은 점수. 내장 스케일러를 건너뛰는지 확인 (11/6 개인화 훅)."""
+    from predict import predict, FEATURES, _MEAN
+    raw = predict({k: _MEAN[i] for i, k in enumerate(FEATURES)})
+    std = predict({k: 0.0 for k in FEATURES}, standardized=True)
+    assert std["score"] == raw["score"] and std["imputed"] == []
+
+def test_standardized_missing_is_mean_not_activity_zero():
+    from predict import predict
+    out = predict({"SnKeyStrokes": 0.0, "SnMouseAct": 0.0}, standardized=True)
+    assert out["score"] is not None and len(out["imputed"]) == 14
