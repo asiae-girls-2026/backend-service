@@ -8,9 +8,9 @@ Windows 데스크톱 케어펫 **케어퐁(CarePong)** 의 서버. 1차 베타 1
 ```
 backend-service/
 ├ api/           메인 API. app/routers/ 화면별 주소, app/services/policy.py 팝업 정책, services/db.py, migrations/*.sql, tests/
-├ model/         추론 서버. predict.py = 혜윤 제공 파일 그대로 (model_v1.json 내장). tests/validation_samples.json 5건으로 검증
+├ model/         추론 서버. predict.py = ML 관련 파일 (model_v1.json 내장). tests/validation_samples.json 5건으로 검증
 ├ collector/     pynput 전역 후킹 → 1분 피처 16개 → JSON stdout. PyInstaller 로 exe
-├ infra/         docker-compose.yml(api·model·db) + docker-compose.aws.yml(EC2 오버라이드: api:80, RDS)
+├ infra/         docker-compose.yml(api·model·db) + docker-compose.aws.yml
 └ docs/          api-changelog.md · db-tables.md · client/(앱 전달물)
 ```
 
@@ -20,9 +20,9 @@ backend-service/
 docker compose -f infra/docker-compose.yml up --build
 ```
 
-| 주소 | 뭐가 보이나 |
+| 주소 | 보이는 것 |
 |---|---|
-| http://localhost:8000/docs | Swagger. 직접 눌러보며 테스트 |
+| http://localhost:8000/docs | Swagger |
 | http://localhost:8000/health | `{"ok": true}` |
 | http://localhost:8001/health | 모델 컨테이너 (model_version·컷) |
 
@@ -59,15 +59,6 @@ DB 통합 테스트: compose 켠 뒤 `DATABASE_URL=postgresql://carepong:carepon
 
 2차 [Planned] 12: `/pet/actions` `/medications/{id}/logs` `/routines/logs` `/relief-sessions`(이벤트로 대체) · `/usage/daily`(GET, 서버 집계) · `/drugs/search` `/supplements/search` · `/telegram/*` · `/ppg/*`
 
-## AWS 에 올리기 (정화 10/4 구성: EC2 1대 + RDS + ALB)
-
-1. EC2(Ubuntu)에 Docker 설치, 저장소 clone
-2. 저장소 루트에 `.env` 생성 — `DATABASE_URL=postgresql://<user>:<pw>@<rds-endpoint>:5432/carepong` (저장소에 올리지 않는다, `.gitignore` 됨)
-   공감챗(10/14): `BEDROCK_PROMPT_ARN=arn:aws:bedrock:ap-northeast-2:<계정>:prompt/<id>:<ver>` 추가. EC2 인스턴스 역할(또는 `.env` 의 `AWS_ACCESS_KEY_ID/SECRET`)에 `bedrock:InvokeModel`·`bedrock:GetPrompt`·`bedrock:RenderPrompt` 권한(RenderPrompt 없으면 AccessDenied "not authorized … with a prompt resource"). 비우면 `/v1/chat` 503 → 앱 규칙 응답. 10/19 부터 프롬프트 v3(`:3`, `{{history}}` 변수) 전제 — `BEDROCK_HISTORY_VAR`(기본 history, 빈 값이면 v2 호환)·`CHAT_FILTER_REPLY`(난타 고정 안내문) 는 선택
-3. `docker compose -f infra/docker-compose.yml -f infra/docker-compose.aws.yml up -d --build`
-   → api 가 EC2:80 을 받고 켜지면서 RDS 에 마이그레이션 적용. model·db 포트는 외부에 안 열림
-4. ALB: 타겟 EC2:80, 헬스체크 `/health`, TLS 는 ALB/ACM (Caddy 없음)
-5. 앱의 `CAREPONG_API` 를 ALB DNS 이름으로
 
 ## 규칙
 
@@ -78,9 +69,3 @@ DB 통합 테스트: compose 켠 뒤 `DATABASE_URL=postgresql://carepong:carepon
 - 원시 키 코드·텍스트·창 제목은 어디에도 넣지 않는다
 - 팝업 상태가 메모리에 있으므로 DB 이관(user_prompt_state) 전엔 **워커 1개, 배포는 08:30 전**
 
-## 아직 결정 안 된 것
-
-- 원시(raw) 보관: 혜윤 DB설계 = S3 저장 + `windows.raw_url` 포인터 (1차~2차). 수집기가 원시를 어디까지 남길지 1차 후
-- D07 인증 (정화): `/enroll` 토큰 발급 + 라우터의 `X-User-Id` 헤더를 토큰 검증으로 교체. 지금은 헤더 값 = cp_number 로 users 를 찾음
-- 복약 저장 로직 (정화): `routers/medications.py` — 테이블은 있음
-- Q07 명명(스트레스→컨디션), Q08 팝업 문구

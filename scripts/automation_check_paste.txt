@@ -1,0 +1,55 @@
+sudo docker exec -i infra-api-1 python - <<'EOF'
+# 혜윤 2차 자동화 연결 확인(11/6) — 읽기 전용. kbd_*/ppg_measure 테이블 존재·적재, self_reports 컬럼, windows 적재, 앱 버전 분포
+import os, psycopg
+from datetime import datetime, timezone, timedelta
+KST = timezone(timedelta(hours=9))
+conn = psycopg.connect(os.environ["DATABASE_URL"])
+c = conn.cursor()
+
+def cols(t):
+    c.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=%s ORDER BY ordinal_position", (t,))
+    return c.fetchall()
+
+print("=== 1. 혜윤 ddl 테이블 존재 여부 (인프라: 정화 실행분) ===")
+for t in ["ppg_measure", "kbd_global_seed", "kbd_personal_baseline", "hrv_personal_baseline", "baselines", "model_versions"]:
+    cs = cols(t)
+    if not cs:
+        print(f"  {t:24s} 없음"); continue
+    names = [n for n, _ in cs]
+    c.execute(f"SELECT count(*) FROM {t}")
+    n = c.fetchone()[0]
+    ts = [x for x in ("updated_at", "created_at", "measured_at", "received_at") if x in names]
+    mx = ""
+    if ts:
+        c.execute(f"SELECT max({ts[0]}) FROM {t}")
+        v = c.fetchone()[0]
+        mx = f", max({ts[0]})={v.astimezone(KST):%m/%d %H:%M}" if v else f", max({ts[0]})=없음"
+    print(f"  {t:24s} 있음  rows={n}{mx}")
+    print(f"      컬럼: {', '.join(names)}")
+
+print("\n=== 2. self_reports 컬럼 (혜윤 SCHEMA-NOTES.md와 대조용) ===")
+for n, d in cols("self_reports"):
+    print(f"  {n:18s} {d}")
+c.execute("SELECT status, trigger, count(*) FROM self_reports WHERE received_at >= now() - interval '14 days' GROUP BY 1,2 ORDER BY 1,2")
+print("  최근 14일 status×trigger:", c.fetchall())
+
+print("\n=== 3. windows 적재 (최근 24h) ===")
+c.execute("""SELECT count(*), count(DISTINCT user_id), max(received_at),
+                    count(*) FILTER (WHERE condition_score IS NULL)
+             FROM windows WHERE received_at >= now() - interval '24 hours'""")
+n, u, mx, nul = c.fetchone()
+print(f"  창 {n}건 · 사용자 {u}명 · 마지막 {mx.astimezone(KST):%m/%d %H:%M} · 점수 null {nul}건" if mx else "  최근 24h 창 없음")
+
+print("\n=== 4. 앱 버전 분포 (최근 24h 이벤트 기준, v0.4.x 전환 확인) ===")
+c.execute("""SELECT app_version, count(DISTINCT user_id), count(*) FROM events
+             WHERE received_at >= now() - interval '24 hours' GROUP BY 1 ORDER BY 1""")
+for v, uu, ee in c.fetchall():
+    print(f"  {v:8s} 사용자 {uu:3d} · 이벤트 {ee}")
+
+print("\n=== 5. 마이그레이션 적용 이력 ===")
+c.execute("SELECT * FROM schema_migrations ORDER BY 1")
+for r in c.fetchall(): print("  ", r)
+conn.close()
+EOF
+echo "=== 6. 키보드 기준선 cron (혜윤: 새벽 4시) ==="; crontab -l 2>/dev/null; sudo crontab -l 2>/dev/null; ls -d ~/carepong-automation /opt/carepong-automation 2>/dev/null || echo "carepong-automation 체크아웃 없음"
+echo "=== 7. 서버 코드 버전 ==="; cd ~/backend-service 2>/dev/null && git log -1 --format='%h %ad %s' --date=short && ls api/migrations

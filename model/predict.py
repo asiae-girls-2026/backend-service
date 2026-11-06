@@ -42,7 +42,7 @@ def _isotonic(p):
     return _ISO_Y[-1]
 
 
-def predict(features: dict) -> dict:
+def predict(features: dict, standardized: bool = False) -> dict:
     """
     features: {피처명: 값} dict. 일부 누락 가능(학습 중앙값으로 대치).
     반환: {"score": 0~100 또는 None, "prob": 0~1 또는 None, "raw_prob",
@@ -50,10 +50,12 @@ def predict(features: dict) -> dict:
            "imputed": [대치된 피처명...],
            "thresholds": {"observe":50, "intervene":63}}
     활동0(SnKeyStrokes+SnMouseAct==0)이면 score/prob/level = None.
+    standardized=True: features 가 이미 표준화된 z 값(api kbd_personalize shrinkage 개인화 벡터) — 내장 스케일러를
+      건너뛰고 계수에 바로 곱한다. 누락은 0(=평균) 대치, 활동0 판정은 하지 않는다(z 값이라 의미 없음). (TA 추가 11/6)
     """
     ks = features.get("SnKeyStrokes") or 0
     ma = features.get("SnMouseAct") or 0
-    if float(ks) + float(ma) == 0:
+    if not standardized and float(ks) + float(ma) == 0:
         return {"score": None, "prob": None, "raw_prob": None, "level": None,
                 "imputed": [], "thresholds": {"observe": CUT_OBSERVE, "intervene": CUT_INTERVENE},
                 "note": "activity-zero window"}
@@ -62,6 +64,11 @@ def predict(features: dict) -> dict:
     z = _INTERCEPT
     for i, name in enumerate(FEATURES):
         v = features.get(name, None)
+        if standardized:
+            if v is None:
+                v = 0.0; imputed.append(name)
+            z += _COEF[i] * float(v)
+            continue
         if v is None:
             v = _MEDIAN[i]; imputed.append(name)
         else:
