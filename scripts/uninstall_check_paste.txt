@@ -1,0 +1,129 @@
+sudo docker exec -i -e SINCE='2026-10-27 16:00' -e TEAM='CP-B83C408F' infra-api-1 python - <<'EOF'
+#!/usr/bin/env python3
+"""케어퐁 — 삭제(uninstall) 조치 이행 현황 점검. api 컨테이너 안에서 실행 (DATABASE_URL 사용). 읽기 전용.
+
+원리: 앱은 로그인 시 자동 실행되고 켜져 있는 동안 5분마다 heartbeat/app_health 이벤트와 1분 창을 보낸다.
+      삭제(NSIS 언인스톨)는 서버에 신호를 보내지 않는다. 따라서
+        - 조치 시각 이후 신호가 있는 회원  = 아직 설치돼 있음 (확정)
+        - 조치 시각 이후 신호가 없는 회원  = 삭제했거나 PC를 안 켰음 (미확정 → 2~3일 뒤 재실행으로 좁힘)
+
+EC2 터미널에서 (ec2_quickcheck.txt 와 같은 방식):
+  SINCE='2026-10-27 14:00' TEAM='CP-AAAA,CP-BBBB' \
+  docker exec -i -e SINCE -e TEAM $(docker ps --format '{{.Names}}' | grep -i api | head -1) python - < uninstall_check.py
+
+환경변수
+  SINCE  조치(공지) 시각 KST, 'YYYY-MM-DD HH:MM'. 기본: 오늘 00:00
+  TEAM   제외할 팀원 회원번호(CP-…) 쉼표 구분. 비우면 전원 표시(팀원 표시만 없음)
+"""
+import os
+from datetime import datetime, timezone, timedelta
+import psycopg
+
+KST = timezone(timedelta(hours=9))
+now = datetime.now(KST)
+since_txt = os.environ.get("SINCE") or now.strftime("%Y-%m-%d 00:00")
+SINCE = datetime.strptime(since_txt, "%Y-%m-%d %H:%M").replace(tzinfo=KST)
+TEAM = {s.strip() for s in os.environ.get("TEAM", "").split(",") if s.strip()}
+
+c = psycopg.connect(os.environ["DATABASE_URL"])
+q = lambda sql, *a: c.execute(sql, a).fetchall()
+fmt = lambda t: t.astimezone(KST).strftime("%m-%d %H:%M") if t else "-"
+
+def show(title, rows, cols):
+    print(f"\n── {title}")
+    if not rows:
+        print("   (없음)"); return
+    w = [max(len(str(x)) for x in [h] + [r[i] for r in rows]) for i, h in enumerate(cols)]
+    print("   " + "  ".join(h.ljust(w[i]) for i, h in enumerate(cols)))
+    for r in rows:
+        print("   " + "  ".join(str(x).ljust(w[i]) for i, x in enumerate(r)))
+
+# 회원별 마지막 신호 (서버 수신 시각 기준 — 클라이언트 시계 앞섬 문제 회피). 스모크(CP-S…) 제외.
+# events·windows 를 각각 한 번만 훑도록 집계 (인덱스가 occurred_at 기준이라 received_at 조회는 풀스캔 → 회원별 서브쿼리는 매우 느림).
+rows = q("""
+WITH ev AS (
+  SELECT user_id,
+         MAX(received_at) FILTER (WHERE event IN ('heartbeat','app_health')) hb,
+         MAX(received_at) FILTER (WHERE event = 'app_start') st,
+         MAX(received_at) FILTER (WHERE event = 'app_quit')  qt
+  FROM events GROUP BY user_id
+), ev_ver AS (
+  SELECT DISTINCT ON (user_id) user_id, app_version ver_last
+  FROM events ORDER BY user_id, received_at DESC
+), win AS (
+  SELECT user_id, MAX(received_at) win FROM windows GROUP BY user_id
+)
+SELECT u.cp_number, u.app_version, u.created_at, u.last_seen_at,
+       ev.hb, ev.st, ev.qt, win.win, ev_ver.ver_last
+FROM users u
+LEFT JOIN ev     USING (user_id)
+LEFT JOIN ev_ver USING (user_id)
+LEFT JOIN win    USING (user_id)
+WHERE u.cp_number NOT LIKE 'CP-S%%'
+ORDER BY u.cp_number
+""")
+
+# 분류 (우선순위 순)
+#   팀원             TEAM 에 있는 회원번호
+#   테스트 계정       CP-TEST*, CP-ZZ*, 버전 0.0.0 / *-test — 실사용자 아님
+#   A 지금 켜져 있음   조치 이후 신호 + 마지막 신호가 15분 이내         → 설치 확정
+#   B 오늘 종료 후 끊김 조치 이후 신호 + 마지막이 app_quit               → 설치 확정이었으나 종료(삭제 직전일 수 있음)
+#   C 오늘 활동 후 끊김 조치 이후 신호 + 종료 신호 없이 끊김             → 설치 확정, 절전·강제종료
+#   D 최근 7일 활동    조치 전 7일 안에 신호, 조치 후 없음               → 설치 가능성 높음, PC 안 켬
+#   E 이탈            조치 7일 전부터 신호 없음                         → 서버로는 삭제 여부 알 수 없음
+RECENT_MIN = 15
+is_test = lambda cp, v: cp.startswith("CP-TEST") or cp.startswith("CP-ZZ") or (v or "").endswith("-test") or v == "0.0.0"
+table = []
+KEYS = ["A 지금 켜져 있음", "B 오늘 종료 후 끊김", "C 오늘 활동 후 끊김", "D 최근 7일 활동(오늘 없음)", "E 이탈(7일 이상)", "테스트 계정", "팀원"]
+cnt = {k: 0 for k in KEYS}
+for cp, ver, created, seen, hb, st, qt, win, ver_last in rows:
+    v = ver_last or ver
+    last = max([t for t in (seen, hb, st, qt, win) if t], default=None)
+    if cp in TEAM:
+        status = "팀원"
+    elif is_test(cp, v):
+        status = "테스트 계정"
+    elif last is None or last < SINCE - timedelta(days=7):
+        status = "E 이탈(7일 이상)"
+    elif last < SINCE:
+        status = "D 최근 7일 활동(오늘 없음)"
+    elif now - last <= timedelta(minutes=RECENT_MIN):
+        status = "A 지금 켜져 있음"
+    elif qt and qt >= last - timedelta(minutes=1):
+        status = "B 오늘 종료 후 끊김"
+    else:
+        status = "C 오늘 활동 후 끊김"
+    cnt[status] += 1
+    idle_h = round((now - last).total_seconds() / 3600, 1) if last else "-"
+    table.append((cp, v, fmt(last), idle_h, fmt(hb), fmt(win), fmt(qt), status))
+
+order = {k: i for i, k in enumerate(KEYS)}
+table.sort(key=lambda r: (order[r[7]], r[2]))
+
+print(f"조치 시각(SINCE) = {SINCE.strftime('%Y-%m-%d %H:%M')} KST   지금 = {now.strftime('%Y-%m-%d %H:%M')} KST   팀원 제외 = {len(TEAM)}명")
+total = len(rows)
+installed = cnt["A 지금 켜져 있음"] + cnt["B 오늘 종료 후 끊김"] + cnt["C 오늘 활동 후 끊김"]
+print(f"\n== 요약 (스모크 CP-S… 제외, 회원 {total}명) ==")
+for k in KEYS:
+    print(f"   {k.ljust(18)} {cnt[k]:3d}명")
+print(f"\n   ▶ 설치 확정(조치 이후 신호 있음, A+B+C) = {installed}명   /  미확인(D+E) = {cnt['D 최근 7일 활동(오늘 없음)'] + cnt['E 이탈(7일 이상)']}명")
+print("   * 서버는 '설치돼 있음'만 확인할 수 있고 '삭제했음'은 확인 못 함. B·D 는 다음 날 재실행으로 확인.")
+
+show("회원별 마지막 신호", table,
+     ["회원번호", "버전", "마지막신호", "경과(h)", "heartbeat", "마지막창", "app_quit", "상태"])
+
+# 조치 이후 시간대별 '켜져 있던' 고유 회원 수 — 줄어드는 추세 확인용
+trend = q("""
+SELECT to_char(date_trunc('hour', received_at AT TIME ZONE 'Asia/Seoul'), 'MM-DD HH24:00') h,
+       COUNT(DISTINCT user_id) n
+FROM events
+WHERE received_at >= %s AND event IN ('heartbeat','app_health','app_start')
+  AND user_id IN (SELECT user_id FROM users WHERE cp_number NOT LIKE 'CP-S%%')
+GROUP BY 1 ORDER BY 1
+""", SINCE)
+show("조치 이후 시간대별 켜져 있던 회원 수(팀원 포함)", trend, ["시각(KST)", "회원수"])
+
+# 연락 대상 명단 — 설치 확정(A+B+C) + 최근 7일 활동(D). 팀원·테스트 제외.
+contact = [(r[0], r[7], r[2]) for r in table if r[7][0] in "ABCD"]
+show("연락 대상 (설치 확정 + 최근 7일 활동)", contact, ["회원번호", "상태", "마지막신호"])
+EOF
