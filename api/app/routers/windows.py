@@ -63,6 +63,8 @@ def _personalized(uid: str | None) -> list[float] | None:
     kbd_global_seed · kbd_personal_baseline · 직전 30분 windows 를 api 가 쓰는 같은 RDS 연결로 읽는다."""
     if not KBD_PERSONALIZE or not uid or not db.available():
         return None
+    if not (model_client.model_info() or {}).get("standardized_input"):
+        return None    # 구모델(standardized 모름)에 z-벡터를 보내면 스케일러를 또 타서 점수가 틀어짐 → 모델이 새 버전일 때만 개인화
     try:
         with db.conn() as c:
             x = kbd_personalize.get_personalized_features(uid, conn=c)

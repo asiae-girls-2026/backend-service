@@ -53,10 +53,23 @@ def test_personalized_vector_goes_to_model_standardized(monkeypatch):
     monkeypatch.setattr(kbd_personalize, "get_personalized_features", lambda uid, conn=None, **k: [0.0] * 16)
     sent = []
     monkeypatch.setattr(model_client, "predict", lambda f, standardized=False: sent.append((f, standardized)) or {"score": 40, "level": "normal", "model_version": "v1"})
-    monkeypatch.setattr(model_client, "model_info", lambda: {"cut_intervene": 63})
+    monkeypatch.setattr(model_client, "model_info", lambda: {"cut_intervene": 63, "standardized_input": True})
     r = client.post("/v1/windows", json={**BASE, "features": {"SnKeyStrokes": 10, "SnMouseAct": 3}}, headers={"X-User-Id": "t1"})
     assert r.status_code == 200 and sent == [(dict(zip(kbd_personalize.FEATS, [0.0] * 16)), True)]
     assert r.json()["condition_score"] == 40 and r.json()["model_version"] == "v1+kbd"
+
+def test_old_model_without_standardized_flag_skips_personalization(monkeypatch):
+    """ML EC2 모델이 아직 구버전(health 에 standardized_input 없음)이면 z-벡터를 보내지 않는다 — 스케일러 이중 적용 방지."""
+    from app.services import kbd_personalize
+    from app.routers import windows as wr
+    _db_on(monkeypatch); monkeypatch.setattr(wr, "KBD_PERSONALIZE", True)
+    called = []
+    monkeypatch.setattr(kbd_personalize, "get_personalized_features", lambda *a, **k: called.append(1) or [0.0] * 16)
+    sent = []
+    monkeypatch.setattr(model_client, "predict", lambda f, standardized=False: sent.append(standardized) or {"score": 55, "level": "observe", "model_version": "v1"})
+    monkeypatch.setattr(model_client, "model_info", lambda: {"cut_intervene": 63})
+    r = client.post("/v1/windows", json={**BASE, "features": {"SnKeyStrokes": 10, "SnMouseAct": 3}}, headers={"X-User-Id": "t1"})
+    assert r.status_code == 200 and called == [] and sent == [False] and r.json()["model_version"] == "v1"
 
 def test_no_baseline_falls_back_to_raw_features(monkeypatch):
     from app.services import kbd_personalize
@@ -65,7 +78,7 @@ def test_no_baseline_falls_back_to_raw_features(monkeypatch):
     monkeypatch.setattr(kbd_personalize, "get_personalized_features", lambda uid, conn=None, **k: None)
     sent = []
     monkeypatch.setattr(model_client, "predict", lambda f, standardized=False: sent.append((f, standardized)) or {"score": 55, "level": "observe", "model_version": "v1"})
-    monkeypatch.setattr(model_client, "model_info", lambda: {"cut_intervene": 63})
+    monkeypatch.setattr(model_client, "model_info", lambda: {"cut_intervene": 63, "standardized_input": True})
     r = client.post("/v1/windows", json={**BASE, "features": {"SnKeyStrokes": 10, "SnMouseAct": 3}}, headers={"X-User-Id": "t1"})
     assert len(sent) == 1 and sent[0][1] is False and sent[0][0]["SnKeyStrokes"] == 10
     assert r.json()["model_version"] == "v1"
@@ -77,7 +90,7 @@ def test_personalize_error_never_breaks_window(monkeypatch):
     def boom(*a, **k): raise RuntimeError("kbd_global_seed 없음")
     monkeypatch.setattr(kbd_personalize, "get_personalized_features", boom)
     monkeypatch.setattr(model_client, "predict", lambda f, standardized=False: {"score": 30, "level": "normal", "model_version": "v1"})
-    monkeypatch.setattr(model_client, "model_info", lambda: {"cut_intervene": 63})
+    monkeypatch.setattr(model_client, "model_info", lambda: {"cut_intervene": 63, "standardized_input": True})
     r = client.post("/v1/windows", json={**BASE, "features": {"SnKeyStrokes": 10, "SnMouseAct": 3}}, headers={"X-User-Id": "t1"})
     assert r.status_code == 200 and r.json()["condition_score"] == 30
 
