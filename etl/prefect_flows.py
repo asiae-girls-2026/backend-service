@@ -1,6 +1,7 @@
 """Prefect 3에서 호출할 CarePong 데이터 갱신 Flow."""
 
 import os
+from prefect.schedules import Cron
 
 from prefect import flow, task
 
@@ -22,8 +23,9 @@ if __name__ == "__main__":
     cron = os.getenv("CAREPONG_REFRESH_CRON", "0 3 * * 0")
     refresh_all.serve(
         name="carepong-weekly-data-refresh",
-        cron=cron,
+        schedule=Cron(
+        os.getenv("CAREPONG_REFRESH_CRON", "0 3 * * 0"),
         timezone="Asia/Seoul",
-        pause_on_shutdown=False,
+        ),
         limit=1,
     )
