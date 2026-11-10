@@ -22,7 +22,6 @@ services:
         "8000"
       ]
 
-    # AWS에서는 model 컨테이너를 같은 EC2에서 띄우지 않음
     depends_on: !reset []
 
     # 컨테이너 장애/EC2 재부팅 후 자동 재시작.
