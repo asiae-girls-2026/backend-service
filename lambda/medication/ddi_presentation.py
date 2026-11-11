@@ -1,5 +1,5 @@
 """Deterministic DDI presentation; does not approve or modify source rules."""
-VERSION = "20261026.1"
+VERSION = '20261111.7'
 APPROVED = {"APPROVED", "VERIFIED", "CONFIRMED"}
 COMPLETE = {"COMPLETE_FOR_AVAILABLE_RULES", "COMPLETE"}
 
@@ -86,11 +86,11 @@ def pair_assessment(raw, a, b):
 
     limitations = []
     if raw.get("coverage") not in COMPLETE:
-        limitations.append("검사 범위가 불완전하며 전체 상호작용을 확인한 결과는 아니에요.")
+        limitations.append("일부 상호작용은 확인하지 못했어요.")
     if candidates or unverified_confirmed:
-        limitations.append("별도로 남아 있는 미검토 규칙·매핑 후보는 확정 근거에 포함하지 않았어요.")
+        limitations.append("아직 확인이 끝나지 않은 자료는 이번 결과에 포함하지 않았어요.")
     if rejected:
-        limitations.append("일부 제품 직접 근거는 원본 품목번호 대조 확인이 부족해 확정 설명에서 제외했어요.")
+        limitations.append("선택한 약에 해당하는지 확인되지 않은 자료는 결과에서 제외했어요.")
 
     if groups:
         status = "OFFICIAL_PRODUCT_EVIDENCE_FOUND"
@@ -110,64 +110,124 @@ def pair_assessment(raw, a, b):
 
 
 def evidence_sentences(assessment):
-    names = assessment["product_names"]
-    pair = f"{names[0]} / {names[1]}"
+    names = assessment['product_names']
+    pair = f'{names[0]}와 {names[1]}'
     sentences = []
-    for group in assessment["evidence_groups"]:
-        sentences.append(
-            f"{pair}의 품목번호 조합에 대해 식약처 DUR 원본의 병용금기 기록이 확인됐어요. "
-            f"원본에 기재된 사유: ‘{group['reason']}’.")
-    for rule in assessment["verified_rules"]:
-        reason = next((text(rule.get(k)) for k in ("evidence", "description", "reason")
-                       if text(rule.get(k))), "")
-        sentences.append(f"{pair}에서 검토·활성화 조건을 충족한 성분 규칙이 조회됐어요."
-                         + (f" 규칙에 기재된 내용: ‘{reason}’." if reason else ""))
-    return sentences
+    for group in assessment['evidence_groups']:
+        sentences.append(f'{pair}를 함께 복용하지 않도록 안내한 식약처 자료가 확인됐어요. '
+                         f"자료에 적힌 이유: ‘{group['reason']}’.")
+    for rule in assessment['verified_rules']:
+        reasons = [text(x) for x in rule.get('prohibition_reasons', [])
+                   if isinstance(x, str) and text(x)]
+        if not reasons:
+            reasons = [text(rule[k]) for k in ('evidence', 'description', 'reason')
+                       if isinstance(rule.get(k), str) and text(rule[k])][:1]
+        sentence = f'{pair}를 함께 복용할 때 주의할 내용을 확인했어요.'
+        if reasons:
+            sentence += ' 자료에 적힌 내용: ' + ' / '.join(f'‘{reason}’' for reason in unique(reasons)) + '.'
+        sentences.append(sentence)
+    return unique(sentences)
 
 
 def present_pairs(public_pairs, coverage):
-    """Return additive display fields; preserve all raw evidence and statuses."""
-    assessments = [pair_assessment(p["ddi_result"], p["product_a"], p["product_b"])
+    """Render plain Korean; retain evidence selection and assessment status policy."""
+    assessments = [pair_assessment(p['ddi_result'], p['product_a'], p['product_b'])
                    for p in public_pairs]
-    confirmed = [a for a in assessments if a["evidence_groups"] or a["verified_rules"]]
-    limitations = unique([s for a in assessments for s in a["limitations"]])
+    confirmed = [a for a in assessments if a['evidence_groups'] or a['verified_rules']]
+    limitations = unique([s for a in assessments for s in a['limitations']])
     if coverage not in COMPLETE:
-        limitations = unique(limitations + ["검사 범위가 불완전하며 전체 상호작용을 확인한 결과는 아니에요."])
+        limitations = unique(limitations + ['일부 상호작용은 확인하지 못했어요.'])
     sentences = [s for a in confirmed for s in evidence_sentences(a)]
+    unresolved = [a for a in assessments if not (a['evidence_groups'] or a['verified_rules'])]
+    for assessment in unresolved:
+        names = assessment['product_names']
+        pair = f'{names[0]}와 {names[1]}'
+        if assessment['assessment_status'] == 'UNRESOLVED_MAPPING':
+            sentences.append(f'{pair}는 제품·성분 정보가 충분히 연결되지 않아 이번 상호작용 확인이 제한됐어요.')
+        elif assessment['assessment_status'] == 'REFERENCE_ONLY':
+            sentences.append(f'{pair}에 관련된 참고자료가 있지만, 선택한 두 약에 적용되는 주의 정보인지는 아직 확인되지 않았어요.')
+        else:
+            sentences.append(f'{pair}의 상호작용 주의 정보는 케어퐁이 이번에 확인 가능한 자료에서 확인되지 않았어요.')
+    if unresolved:
+        sentences.append('확인 범위가 제한되어 함께 복용해도 안전하다고 확정할 수는 없어요.')
+        if any(a['assessment_status'] == 'UNRESOLVED_MAPPING' for a in unresolved):
+            sentences.append('선택한 제품명과 함량이 실제 복용하는 약과 일치하는지 확인해 주세요.')
     if confirmed:
         missing = len(assessments) - len(confirmed)
         if missing:
-            limitations.append(f"나머지 {missing}개 제품 조합에서는 확정 설명에 사용할 근거를 확인하지 못했으며, 안전하다는 뜻은 아니에요.")
-    else:
-        seen = set()
-        for a in assessments:
-            for ref in a["references"]:
-                key = (tuple(ref["ingredients"]), ref["reason"])
-                if key in seen:
-                    continue
-                seen.add(key)
-                ia, ib = ref["ingredients"]
-                sentences.append(f"식약처 DUR 성분 원본의 참고정보: {ia} / {ib} — ‘{ref['reason']}’.")
-        if sentences:
-            sentences.append("이 성분 참고정보가 선택한 제품에 적용되는지는 매핑·제형·투여경로 검토가 완료되지 않았어요.")
-        else:
-            sentences.append("현재 반환된 근거로는 선택한 제품의 상호작용을 확정할 수 없어요.")
-        sentences.append("이는 상호작용이 없거나 병용 안전성이 확인됐다는 뜻은 아니에요.")
+            limitations.append(f'나머지 {missing}개 약 조합의 상호작용은 확정하지 못했어요. 안전하다는 뜻은 아니에요.')
+        sentences.append('이 결과만으로 개인의 복용 가능 여부를 결정할 수는 없어요.')
+    if not assessments:
+        sentences.append('검사할 약의 정보를 확인하지 못했어요. 안전하다는 뜻은 아니에요.')
+    if unresolved or not assessments:
+        sentences.append('추가 확인은 건강보험심사평가원 ‘DUR 국민 체험관’에서 하거나, 약사에게 두 약의 정확한 제품명을 알려 문의해 주세요.')
+    answer = ' '.join(unique(sentences + limitations))
     if confirmed:
-        sentences.append("이 결과는 개별 환자의 복용 가능 여부나 임상적 위험도를 확정한 판정은 아니에요.")
-    answer = " ".join(unique(sentences + limitations))
-    if confirmed:
-        status = "EVIDENCE_FOUND_WITH_LIMITATIONS" if limitations else "EVIDENCE_FOUND"
-    elif any(a["assessment_status"] == "REFERENCE_ONLY" for a in assessments):
-        status = "REFERENCE_ONLY"
-    elif any(a["assessment_status"] == "UNRESOLVED_MAPPING" for a in assessments):
-        status = "UNRESOLVED_MAPPING"
+        status = 'EVIDENCE_FOUND_WITH_LIMITATIONS' if limitations else 'EVIDENCE_FOUND'
+    elif any(a['assessment_status'] == 'REFERENCE_ONLY' for a in assessments):
+        status = 'REFERENCE_ONLY'
+    elif any(a['assessment_status'] == 'UNRESOLVED_MAPPING' for a in assessments):
+        status = 'UNRESOLVED_MAPPING'
     else:
-        status = "NO_CONFIRMED_EVIDENCE"
-    return {"answer": answer, "assessment_status": status,
-            "limitations": unique(limitations), "pair_assessments": assessments,
-            "presentation_version": VERSION}
+        status = 'NO_CONFIRMED_EVIDENCE'
+    result = {'answer': answer, 'assessment_status': status,
+            'limitations': unique(limitations), 'pair_assessments': assessments,
+            'presentation_version': VERSION}
+    result['ddi_sections'] = build_ddi_sections(result)
+    result['ddi_sections_version'] = 1
+    return result
 
 
 def present_pair(raw, a, b):
     return present_pairs([{"product_a": a, "product_b": b, "ddi_result": raw}], raw.get("coverage"))
+
+
+def build_ddi_sections(presentation):
+    """Display-only sections built from the same verified assessments as answer."""
+    assessments = presentation['pair_assessments']
+    sections = []
+    confirmed = []
+    unresolved = []
+    for assessment in assessments:
+        names = assessment['product_names']
+        pair = f'{names[0]}와 {names[1]}'
+        metadata = {'product_ids': assessment['product_ids'], 'product_names': names}
+        if assessment['evidence_groups'] or assessment['verified_rules']:
+            confirmed.append(assessment)
+            items = [group['reason'] for group in assessment['evidence_groups']]
+            for rule in assessment['verified_rules']:
+                reasons = [text(x) for x in rule.get('prohibition_reasons', [])
+                           if isinstance(x, str) and text(x)]
+                if not reasons:
+                    reasons = [text(rule[k]) for k in ('evidence', 'description', 'reason')
+                               if isinstance(rule.get(k), str) and text(rule[k])][:1]
+                items.extend(reasons or ['함께 복용할 때 주의할 내용이 확인됐어요.'])
+            sections.append(dict(metadata, type='EVIDENCE', title='확인된 내용',
+                                 items=unique(items)))
+        else:
+            unresolved.append(assessment)
+            status = assessment['assessment_status']
+            if status == 'UNRESOLVED_MAPPING':
+                message = f'{pair}는 제품·성분 정보가 충분히 연결되지 않아 이번 상호작용 확인이 제한됐어요.'
+            elif status == 'REFERENCE_ONLY':
+                message = f'{pair}에 관련된 참고자료가 있지만, 선택한 두 약에 적용되는 주의 정보인지는 아직 확인되지 않았어요.'
+            else:
+                message = f'{pair}의 상호작용 주의 정보는 케어퐁이 이번에 확인 가능한 자료에서 확인되지 않았어요.'
+            sections.append(dict(metadata, type='RESULT', title='검사 결과', items=[message]))
+    caution = []
+    if confirmed:
+        caution.append('이 결과만으로 개인의 복용 가능 여부를 결정할 수는 없어요.')
+    if unresolved:
+        caution.append('확인 범위가 제한되어 함께 복용해도 안전하다고 확정할 수는 없어요.')
+        if any(a['assessment_status'] == 'UNRESOLVED_MAPPING' for a in unresolved):
+            caution.append('선택한 제품명과 함량이 실제 복용하는 약과 일치하는지 확인해 주세요.')
+    if not assessments:
+        sections.append({'type': 'RESULT', 'title': '검사 결과',
+                         'items': ['검사할 약의 정보를 확인하지 못했어요.']})
+        caution.append('확인 범위가 제한되어 함께 복용해도 안전하다고 확정할 수는 없어요.')
+    caution.extend(presentation['limitations'])
+    if unresolved or not assessments:
+        caution.append('추가 확인은 건강보험심사평가원 ‘DUR 국민 체험관’에서 하거나, 약사에게 두 약의 정확한 제품명을 알려 문의해 주세요.')
+    if caution:
+        sections.append({'type': 'CAUTION', 'title': '주의', 'items': unique(caution)})
+    return sections
