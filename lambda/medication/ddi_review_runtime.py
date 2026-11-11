@@ -141,6 +141,25 @@ def wrap_engine(original):
         result=original(conn,product_a,product_b,*args,**kwargs)
         if not isinstance(result,dict): raise TypeError('DDI 결과가 dict가 아닙니다.')
         result=dict(result)
+        policy_row=conn.execute(
+            'SELECT public.ddi_evaluate_mapping_policy(%s,%s)',
+            (product_a,product_b)
+        ).fetchone()
+        if not policy_row or not isinstance(policy_row[0],dict):
+            raise RuntimeError('DDI_MAPPING_POLICY_UNAVAILABLE')
+        policy=policy_row[0]
+        action=policy.get('action_code')
+        if not action:
+            raise RuntimeError('DDI_MAPPING_POLICY_NOT_FOUND')
+
+        result['mapping_policy']=policy
+        result['mapping_action']=action
+        result['mapping_resolution_required']=action in (
+            'RESOLVE_M_TO_D',
+            'RESOLVE_D_CODE',
+            'RESOLVE_PRODUCT_MAPPING',
+            'INSUFFICIENT_EVIDENCE'
+        )
         confirmed=approved_for_pair(conn,product_a,product_b)
         result['confirmed_rules']=confirmed
         result['approved_rule_count']=len(confirmed)
@@ -163,40 +182,21 @@ def wrap_engine(original):
 
 
 def approved_answer(captured):
-    sentences=[]
+    # The existing review wrapper still controls statuses, approvals and raw results.
+    from ddi_presentation import present_pairs
+    pairs = []
     for record in captured.values():
-        matches=record['ddi_result'].get('confirmed_rules') or []
-        if not matches:
-            official=record['ddi_result'].get('official_product_evidence') or []
-            if official:
-                names=record['product_names']
-                sentences.append(f'{names[0]}와 {names[1]}는 직접 DUR 품목 근거가 있으나 서비스 승인 규칙과는 구분됩니다.')
-                original=[]
-                for evidence in official:
-                    reason=evidence.get('prohibition_reason')
-                    if reason and reason not in original:original.append(reason)
-                if original:sentences.append('품목 원천 주의내용: '+' / '.join(original))
-            pending=[]
-            for candidate in record['ddi_result'].get('candidate_rules') or []:
-                for reason in reasons(candidate):
-                    if reason not in pending:pending.append(reason)
-            if pending:
-                names=record['product_names']
-                sentences.append(f'{names[0]}·{names[1]} 관련 미검토 참고 원문(해당 제품쌍의 적용 확정 아님): '+' / '.join(pending))
-            continue
-        names=matches[0]['product_names']
-        types=[]
-        if any(m['type']=='PRODUCT_RULE' for m in matches): types.append('제품 규칙')
-        if any(m['type']=='INGREDIENT_DUR_RULE' for m in matches): types.append('D코드 성분쌍 규칙')
-        sentences.append(f"{names[0]}와 {names[1]}는 승인된 해당 제품쌍 적용 범위에서 {'·'.join(types)}에 일치합니다.")
-        evidence=[]
-        for m in matches:
-            for reason in m['prohibition_reasons']:
-                if reason not in evidence: evidence.append(reason)
-        if evidence: sentences.append('원천 주의내용: '+' / '.join(evidence))
-    if sentences:
-        sentences.append('미검토 후보는 승인 근거에 포함하지 않았으며, 전체 검사 범위는 아직 불완전합니다.')
-    return ' '.join(sentences)
+        ids = record['product_ids']
+        if len(ids) != 2:
+            raise ValueError('Expected exactly two products in captured evidence')
+        raw = dict(record['ddi_result'])
+        products = dict(raw.get('products') or {})
+        for product_id, name in zip(ids, record['product_names']):
+            original = products.get(str(product_id), products.get(product_id, {})) or {}
+            products[str(product_id)] = dict(original, name=name)
+        raw['products'] = products
+        pairs.append({'product_a': ids[0], 'product_b': ids[1], 'ddi_result': raw})
+    return present_pairs(pairs, 'INCOMPLETE')['answer']
 
 
 def wrap_handler(original):
@@ -242,7 +242,27 @@ def wrap_handler(original):
             # Keep top-level per-pair assessments consistent with pair_results.
             if isinstance(response.get('pair_results'),list) and 'pair_assessments' in response:
                 response['pair_assessments']=[p['assessment'] for p in response['pair_results'] if isinstance(p,dict) and 'assessment' in p]
+            sectioned = presentation_for_review(captured)
+            response['ddi_sections'] = sectioned['ddi_sections']
+            response['ddi_sections_version'] = sectioned['ddi_sections_version']
+            response['presentation_version'] = sectioned['presentation_version']
             return response
         finally:
             CAPTURE.reset(token)
     return reviewed
+
+def presentation_for_review(captured):
+    from ddi_presentation import present_pairs
+    pairs = []
+    for record in captured.values():
+        ids = record['product_ids']
+        if len(ids) != 2:
+            raise ValueError('Expected exactly two products in captured evidence')
+        raw = dict(record['ddi_result'])
+        products = dict(raw.get('products') or {})
+        for product_id, name in zip(ids, record['product_names']):
+            original = products.get(str(product_id), products.get(product_id, {})) or {}
+            products[str(product_id)] = dict(original, name=name)
+        raw['products'] = products
+        pairs.append({'product_a': ids[0], 'product_b': ids[1], 'ddi_result': raw})
+    return present_pairs(pairs, 'INCOMPLETE')
