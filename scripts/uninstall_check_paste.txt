@@ -1,4 +1,4 @@
-sudo docker exec -i -e SINCE='2026-10-27 16:00' -e TEAM='CP-B83C408F' infra-api-1 python - <<'EOF'
+sudo docker exec -i -e SINCE='2026-10-27 16:00' -e TEAM='CP-XXXXXXXX' infra-api-1 python - <<'EOF'
 #!/usr/bin/env python3
 """케어퐁 — 삭제(uninstall) 조치 이행 현황 점검. api 컨테이너 안에서 실행 (DATABASE_URL 사용). 읽기 전용.
 

@@ -54,7 +54,7 @@
 
 ### 배포 후 확인 (EC2 또는 아무 PC)
 ```
-curl -s -X POST http://carepong-alb-405431408.ap-northeast-2.elb.amazonaws.com/v1/chat   -H "Content-Type: application/json" -H "X-User-Id: CP-TEST0001"   -d '{"message":"동료가 내 아이디어를 자기 거처럼 발표했어","client_event_id":"t1"}'
+curl -s -X POST http://<ALB_DNS>/v1/chat   -H "Content-Type: application/json" -H "X-User-Id: CP-TEST0001"   -d '{"message":"동료가 내 아이디어를 자기 거처럼 발표했어","client_event_id":"t1"}'
 ```
 200 + 한국어 공감 답변이면 성공 (10/14 11시 실서버 확인: 3건 200, 1.8~2.1초, `model_id` 끝 `:1`). 503 이면 `.env` 의 ARN 누락 — `.env` 를 고친 뒤엔 `docker compose … up -d --force-recreate api` (restart 는 예전 env 를 그대로 씀). 502 면 IAM 권한·리전·ARN 오타 (api 로그 `carepong.bedrock` 경고에 원인 표시). 프롬프트 버전 교체는 ARN 끝 `:1` → `:2` 만 바꾸고 force-recreate.
 
@@ -68,7 +68,7 @@ curl -s -X POST http://carepong-alb-405431408.ap-northeast-2.elb.amazonaws.com/v
 
 - Converse 로 프롬프트 ARN 을 부를 때 `messages` 를 덧붙이는 것도 가능하다고 AWS 문서에 있으나(2026-10 확인), 변수 방식이 변경이 작아 `{{history}}` 로 결정.
 - `promptVariables` 에 프롬프트에 없는 변수를 보내거나 있는 변수를 빼면 어떻게 되는지는 문서에 없음 → **서버 배포와 `.env` ARN `:3` 교체를 같은 force-recreate 에서** 한다. 문제 시 롤백: ARN `:2` + `BEDROCK_HISTORY_VAR=` (빈 값).
-- 프롬프트 v3 ARN: `arn:aws:bedrock:ap-northeast-2:915062473810:prompt/OFGNN9OZFU:3` (민서 10/19 콘솔 등록). 콘솔 테스트에서 "다행이야" 같은 반말 1회 관측 — 재발하면 혜윤이 [역할] 문구 강화.
+- 프롬프트 v3 ARN: `arn:aws:bedrock:ap-northeast-2:<ACCOUNT_ID>:prompt/<PROMPT_ID>:3` (민서 10/19 콘솔 등록). 콘솔 테스트에서 "다행이야" 같은 반말 1회 관측 — 재발하면 혜윤이 [역할] 문구 강화.
 - 비용: 5턴 동봉 시 호출당 입력 수백 토큰 증가, Haiku 4.5 입력 단가 기준 월 $1 미만.
 
 ### 배포 (EC2)
