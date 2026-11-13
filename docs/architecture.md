@@ -15,7 +15,7 @@ flowchart LR
   API --> RDS[("RDS PostgreSQL 16<br/>테이블 47개")]
   API -->|Converse| BR["Bedrock<br/>공감챗 프롬프트 v3 · 복약 LUI 파싱(Nova)"]
   API -->|invoke| LMB["Lambda (정화)<br/>복약 DDI 검사·설명"]
-  API -->|presigned PUT| S3[("S3 raw")]
+  API -->|gzip batch| S3[("S3 raw<br/>입력 다이내믹스 배치")]
 
   CRON["carepong-automation cron (혜윤)<br/>kbd_personal_baseline 갱신 04:00"] --> RDS
   ETL["etl/ Prefect (정화)<br/>의약품·건기식·DUR·DDI 적재"] --> RDS
@@ -49,6 +49,5 @@ flowchart LR
 
 ## 운영 메모
 
-- NAT Gateway·Glue 가 일 비용의 대부분(10/27 이후 하루 약 $6.4). 크레딧 소진 후 결제 전환 결정(11/6).
 - ALB idle timeout 기본 60초. 복약 LUI confirm 은 서버가 DDI Lambda 를 40초까지 기다리므로 앱 타임아웃 60초.
 - EC2 재부팅 시 api 는 `restart: always` 로 자동 기동 (10/12).

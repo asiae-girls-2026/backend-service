@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in CarePong. This project was built by a five-person student team and is published as-is for learning and reuse. Issues and pull requests are welcome.
+Thanks for your interest in CarePong. This project was built by a student team and is published as-is for learning and reuse. Issues and pull requests are welcome.
 
 ## Before you start
 
@@ -32,7 +32,7 @@ Use a short imperative subject (`feat: …`, `fix: …`, `docs: …`). Korean or
 
 # 기여 안내 (한국어)
 
-케어퐁은 5인 학생 팀 프로젝트를 학습·재사용 목적으로 공개한 저장소입니다. 이슈와 PR 을 환영합니다.
+케어퐁은 학생 팀 프로젝트를 학습·재사용 목적으로 공개한 저장소입니다. 이슈와 PR 을 환영합니다.
 
 - 시작 전 [README.ko.md](README.ko.md) 와 [docs/architecture.md](docs/architecture.md) 를 읽어 주세요. 큰 변경은 이슈를 먼저 열어 주세요.
 - 로컬 실행·테스트는 위 Development 절과 같습니다.

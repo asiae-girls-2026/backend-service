@@ -6,10 +6,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
 
-**케어퐁(CarePong)** 은 Windows 데스크톱에 사는 케어펫입니다. 키보드·마우스 사용 패턴(1분 집계 피처 16개, 원시 입력 없음)으로 과부하를 추론해 쉬어 가라고 말을 걸고, 복약 알림·자연어 약 등록·공감 챗을 제공합니다.
+**케어퐁(CarePong)** 은 Windows 데스크톱에 사는 케어펫입니다. 키보드·마우스 사용 패턴(1분 집계 피처 16개. 입력한 글자·창 제목은 수집하지 않음)으로 과부하를 추론해 쉬어 가라고 말을 걸고, 복약 알림·자연어 약 등록·공감 챗을 제공합니다.
 이 저장소는 그 **서버**입니다. 데스크톱 앱은 [carepong-app](https://github.com/asiae-girls-2026/carepong-app) 에 있습니다.
 
-> 5인 학생 팀의 2개월 프로젝트(2026.09–11)를 학습·재사용 목적으로 공개합니다. 공개 서비스로 운영되지 않습니다.
+> 학생 팀 프로젝트(2026년 9–11월)를 학습·재사용 목적으로 공개합니다. 공개 서비스로 운영되지 않습니다.
 
 ## 구성
 
@@ -18,7 +18,7 @@ Electron 앱 ─ALB─▶ api (FastAPI) ─▶ model (FastAPI, 과부하 추론)
                       ├──▶ PostgreSQL 16 (RDS)
                       ├──▶ Amazon Bedrock   공감 챗 · 복약 자연어 파싱
                       ├──▶ AWS Lambda       약물 상호작용(DDI) 검사
-                      └──▶ S3               원시 입력 백업
+                      └──▶ S3               입력 다이내믹스 배치 보관(ML 재학습용)
 ```
 
 | 폴더 | 내용 |
@@ -37,7 +37,7 @@ Electron 앱 ─ALB─▶ api (FastAPI) ─▶ model (FastAPI, 과부하 추론)
 | Docker + Docker Compose v2 | 권장 경로. 이것만 있으면 api·model·PostgreSQL 이 한 번에 뜬다 |
 | Python 3.12 | Docker 없이 돌릴 때. 의존성은 `api/requirements.txt`(FastAPI·psycopg3·boto3) |
 | PostgreSQL 16 | 유일하게 지원하는 DB. ORM 없이 SQL 을 직접 쓰며(`api/app/services/db.py`), DDL 은 `api/migrations/*.sql` 에 있고 api 기동 시 자동 적용된다 |
-| AWS 계정 (선택) | Bedrock(공감 챗·복약 파싱), Lambda(DDI), S3(raw). 없으면 해당 기능만 503 |
+| AWS 계정 (선택) | Bedrock(공감 챗·복약 파싱), Lambda(DDI), S3(raw 배치). 없으면 해당 기능만 오류 응답하고 나머지는 동작 |
 
 돌려 본 환경: Windows 11(개발, Docker Desktop) · Ubuntu EC2 **t3.micro**(api) + **t3.small**(model) + RDS **db.t4g.micro**(운영, 내부 베타 약 30명·1분 창 약 40만 건).
 
@@ -51,7 +51,7 @@ docker compose -f infra/docker-compose.yml up --build
 
 - Swagger: http://localhost:8000/docs · 서버 상태: http://localhost:8000/health · 모델 상태: http://localhost:8001/health
 - 테스트: `cd api && pytest` · `cd model && pytest`
-- Bedrock·Lambda·S3 는 AWS 자격 증명이 있을 때만 동작하고, 없으면 해당 기능이 503 으로 응답하며 나머지는 그대로 돈다.
+- Bedrock·Lambda·S3 는 AWS 자격 증명이 있을 때만 동작한다. 없으면 공감 챗·복약 파싱은 503, DDI 검사는 502, raw 업로드는 실패로 응답하고 나머지(감지·복약 일정·펫)는 그대로 돈다.
 - Docker 없이: `cd api && pip install -r requirements.txt && uvicorn app.main:app --reload` (DB 는 `DATABASE_URL` 로 연결, 없으면 저장 없이 동작).
 
 ## 바꿔 쓰려면 (설정 파일)

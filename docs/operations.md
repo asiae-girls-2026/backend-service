@@ -83,7 +83,7 @@ PPG 측정(폰) ─▶ Vercel 측정 웹 → Render 서버 ─▶ RDS/S3 직결 
 | 공감챗 | 메시지마다 | `POST /v1/chat` | Bedrock 프롬프트 v3, 원문 저장 없음, 하루 상한 |
 | 복약 등록·회차·복용기록 | 바뀔 때 / 매일 | `/v1/users/me/medications*` | Bearer 토큰. 서버가 회차 생성, 앱이 알림 |
 | 복약 자연어 등록(LUI) | 대화마다 | `/v1/medication-chat/*` | 문장 → 제품·시간·요일 되묻기 → 확인 → 등록. 오류는 한국어 `message`·`error_code` JSON |
-| 원시 입력 백업 | 배치 | `/v1/raw/*` | S3 presigned 업로드 |
+| 입력 다이내믹스 배치 | 수집기 파일 단위 | `/v1/raw/batches` | gzip 배치를 검증(sha256·크기)해 S3 보관. ML 재학습용 |
 | 설정·펫 | 바뀔 때 | `/v1/routines` `/v1/pet` | 메모리 스텁. 원본은 앱 로컬 |
 
 서버가 "띄울지" 판단하는 팝업은 **과부하 확인 하나**(`services/policy.py`: 과부하 1순위 · 고정 보충 11:30/14/15:30/17 · 1시간 텀 · 하루 5~8회). 복약·물·스트레칭·휴식 알림과 정기 체크인은 앱이 띄우고 서버는 기록만 받는다.
@@ -102,7 +102,7 @@ PPG 측정(폰) ─▶ Vercel 측정 웹 → Render 서버 ─▶ RDS/S3 직결 
 | catalog | GET /v1/catalog/search | 구현(Data) | 약·건기식 통합 검색 |
 | medications_live | GET/POST /v1/users/me/medications · GET …/today · GET …/medication-adherence · PATCH/DELETE …/{id} · POST …/{id}/intakes · POST …/medication-intakes/batch | 구현 | 복약 2차 운영 8개 ([medication-phase2-api.md](medication-phase2-api.md)) |
 | medication_chat | POST /v1/medication-chat/messages · /selections · /confirm · /cancel | 구현 | 복약 LUI 4개 (파싱 Bedrock Nova, DDI 는 DDI Lambda) |
-| raw | POST /v1/raw/upload-url · /v1/raw/batches | 구현 | 원시 입력 S3 업로드 |
+| raw | POST /v1/raw/upload-url · /v1/raw/batches | 구현(Data) | 입력 다이내믹스 gzip 배치 S3 보관 |
 | routines · pet | GET/PUT /v1/routines · GET/PUT /v1/pet | 메모리 스텁 | 앱 로컬이 원본. 서버 재시작 시 사라짐 |
 | relief · routines · pet · medications | /v1/relief-sessions · /v1/routines/logs · /v1/pet/actions · /v1/medications/{id}/logs | Planned | 이벤트(`/events/batch`)로 대체됨 |
 | drugs · usage | /v1/drugs/search · /v1/supplements/search · /v1/usage/daily | Planned | 검색은 `/v1/catalog/search` 가 대체 |

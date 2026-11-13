@@ -6,10 +6,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
 
-**CarePong** is a desktop care-pet for Windows. It infers cognitive overload from keyboard and mouse usage patterns (16 per-minute aggregate features, no raw input), nudges the user to take a break, and offers medication reminders, natural-language medication registration and an empathy chat.
+**CarePong** is a desktop care-pet for Windows. It infers cognitive overload from keyboard and mouse usage patterns (16 per-minute aggregate features; typed text and window titles are never collected), nudges the user to take a break, and offers medication reminders, natural-language medication registration and an empathy chat.
 This repository is the **server side**. The desktop app lives in [carepong-app](https://github.com/asiae-girls-2026/carepong-app).
 
-> Built by a five-person student team over two months (Sep–Nov 2026) and published for learning and reuse. It is not operated as a public service.
+> A student team project (Sep–Nov 2026), published for learning and reuse. It is not operated as a public service.
 
 ## Architecture
 
@@ -18,7 +18,7 @@ Electron app ─ALB─▶ api (FastAPI) ─▶ model (FastAPI, overload inferenc
                       ├──▶ PostgreSQL 16 (RDS)
                       ├──▶ Amazon Bedrock   empathy chat · medication NL parsing
                       ├──▶ AWS Lambda       drug–drug interaction (DDI) check
-                      └──▶ S3               raw input backup
+                      └──▶ S3               input-dynamics batches (for model retraining)
 ```
 
 | Folder | Contents |
@@ -37,7 +37,7 @@ Electron app ─ALB─▶ api (FastAPI) ─▶ model (FastAPI, overload inferenc
 | Docker + Docker Compose v2 | Recommended. Brings up api, model and PostgreSQL in one command |
 | Python 3.12 | For running without Docker. Dependencies in `api/requirements.txt` (FastAPI, psycopg3, boto3) |
 | PostgreSQL 16 | The only supported database. Plain SQL, no ORM (`api/app/services/db.py`). DDL lives in `api/migrations/*.sql` and is applied automatically when the api starts |
-| AWS account (optional) | Bedrock (empathy chat, medication parsing), Lambda (DDI), S3 (raw). Without it those features answer 503 |
+| AWS account (optional) | Bedrock (empathy chat, medication parsing), Lambda (DDI), S3 (raw batches). Without it those features return errors and everything else works |
 
 Tested on: Windows 11 (development, Docker Desktop) · Ubuntu on EC2 **t3.micro** (api) + **t3.small** (model) + RDS **db.t4g.micro** (production, internal beta of ~30 users, ~400k one-minute windows).
 
@@ -51,7 +51,7 @@ docker compose -f infra/docker-compose.yml up --build
 
 - Swagger: http://localhost:8000/docs · API health: http://localhost:8000/health · model health: http://localhost:8001/health
 - Tests: `cd api && pytest` · `cd model && pytest`
-- Bedrock, Lambda and S3 features need AWS credentials; without them those endpoints answer 503 and everything else keeps working.
+- Bedrock, Lambda and S3 features need AWS credentials. Without them empathy chat and medication parsing answer 503, the DDI check 502 and raw upload fails; sensing, medication schedules and pet backup keep working.
 - Without Docker: `cd api && pip install -r requirements.txt && uvicorn app.main:app --reload` (set `DATABASE_URL`; with no DB the api runs without persistence).
 
 ## Configuration
