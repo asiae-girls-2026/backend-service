@@ -112,7 +112,7 @@ def _save(w: WindowIn, pred: dict | None, ptype: str, cp: str, uid: str | None =
     except Exception as e:
         log.exception("windows 저장 실패 (%s): %s", w.window_id, e)
 
-@router.post("/windows", response_model=WindowOut, summary="[Stub] 1분 창 업로드 → 서버 추론(개인화 벡터 우선) → 지수·팝업 여부 회신")
+@router.post("/windows", response_model=WindowOut, summary="1분 창 업로드 → 서버 추론(개인화 벡터 우선) → 지수·팝업 여부 회신")
 def post_window(body: WindowIn, x_user_id: str = Header("dev")):
     uid = _user_id(x_user_id)
     pred = _score(body, uid)
@@ -121,7 +121,7 @@ def post_window(body: WindowIn, x_user_id: str = Header("dev")):
     _save(body, pred, ptype, x_user_id, uid)
     return _out(body, pred, ptype)
 
-@router.post("/windows/batch", response_model=list[WindowOut], summary="[Stub] 창 여러 개 업로드 (복구 시, 최대 240). 팝업 없음")
+@router.post("/windows/batch", response_model=list[WindowOut], summary="창 여러 개 업로드 (복구 시, 최대 240). 팝업 없음")
 def post_windows(body: WindowBatchIn, x_user_id: str = Header("dev")):
     """복구 업로드는 과거 창이라 '직전 30분' 기준 개인화가 맞지 않음 → 원시 피처로만 판정 (uid 안 넘김)."""
     st = policy.get_state(x_user_id); cut = _cut(); out = []

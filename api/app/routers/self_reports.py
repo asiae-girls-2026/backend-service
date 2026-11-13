@@ -27,7 +27,7 @@ class SelfReportOut(BaseModel):
     report_id: str = Field(..., examples=["rep_01"])
     accepted: bool = True
 
-@router.post("/self-reports", response_model=SelfReportOut, status_code=201, summary="[Stub] 팝업 응답(예/아니오·1~5·상태)·정기 체크인 기록")
+@router.post("/self-reports", response_model=SelfReportOut, status_code=201, summary="팝업 응답(예/아니오·1~5·상태)·정기 체크인 기록")
 def post_report(body: SelfReportIn, x_user_id: str = Header("dev")):
     if not db.available():
         return SelfReportOut(report_id="rep_nodb")
