@@ -30,6 +30,17 @@ Electron app ─ALB─▶ api (FastAPI) ─▶ model (FastAPI, overload inferenc
 | `etl/` `lambda/` `deploy/` | Drug/supplement ingestion, DUR/DDI rule pipeline (Prefect), DDI Lambda, systemd units |
 | `scripts/` `docs/` | Operations scripts, documentation |
 
+## Requirements
+
+| What | Version / notes |
+|---|---|
+| Docker + Docker Compose v2 | Recommended. Brings up api, model and PostgreSQL in one command |
+| Python 3.12 | For running without Docker. Dependencies in `api/requirements.txt` (FastAPI, psycopg3, boto3) |
+| PostgreSQL 16 | The only supported database. Plain SQL, no ORM (`api/app/services/db.py`). DDL lives in `api/migrations/*.sql` and is applied automatically when the api starts |
+| AWS account (optional) | Bedrock (empathy chat, medication parsing), Lambda (DDI), S3 (raw). Without it those features answer 503 |
+
+Tested on: Windows 11 (development, Docker Desktop) · Ubuntu on EC2 **t3.micro** (api) + **t3.small** (model) + RDS **db.t4g.micro** (production, ~80 users, 400k one-minute windows).
+
 ## Quick start
 
 ```bash
@@ -41,25 +52,41 @@ docker compose -f infra/docker-compose.yml up --build
 - Swagger: http://localhost:8000/docs · API health: http://localhost:8000/health · model health: http://localhost:8001/health
 - Tests: `cd api && pytest` · `cd model && pytest`
 - Bedrock, Lambda and S3 features need AWS credentials; without them those endpoints answer 503 and everything else keeps working.
+- Without Docker: `cd api && pip install -r requirements.txt && uvicorn app.main:app --reload` (set `DATABASE_URL`; with no DB the api runs without persistence).
+
+## Configuration
+
+| To change | Edit |
+|---|---|
+| DB URL, model URL, AWS keys/ARN, daily chat limit | `.env` (see `.env.example`) |
+| Ports, containers, AWS override | `infra/docker-compose.yml`, `infra/docker-compose.aws.yml` |
+| Overload popup policy (cut 63, 20 of 30 min, 1-hour gap, 5–8/day, fixed slots) | constants at the top of `api/app/services/policy.py` |
+| Policy values served to the app (`GET /v1/config`) | `api/app/routers/config.py` |
+| Swap the inference model | replace `model/predict.py`, bump `MODEL_VERSION` |
+| Add or change tables | add `api/migrations/NNN_*.sql` (applied in filename order, recorded in `schema_migrations`) |
+| Collector features, window length | `collector/collector.py` (`--window` seconds) |
+
+## Deployment (how we ran it)
+
+One EC2 instance runs only the api container via `docker compose -f infra/docker-compose.yml -f infra/docker-compose.aws.yml up -d --build api`; the model runs on a second EC2, the database is RDS, an ALB sits in front. CI runs tests only; deployment is a manual paste of `scripts/deploy_api_paste.txt` into the EC2 console. Details in [docs/operations.md](docs/operations.md).
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | Diagram, the path of one request, deployment units (Korean) |
-| [docs/operations.md](docs/operations.md) | Environment variables, data flows, all 44 endpoints, DB, EC2 deployment, rules (Korean) |
+| [docs/operations.md](docs/operations.md) | Environment variables, data flows, all 44 endpoints, DB, EC2 deployment, model server, operations scripts, rules (Korean) |
 | [docs/medication-phase2-api.md](docs/medication-phase2-api.md) | Medication API reference |
 | [docs/DDI_Sections_Frontend_Contract.md](docs/DDI_Sections_Frontend_Contract.md) · [docs/ddi/](docs/ddi/) | DDI result format and rule pipeline |
 | [docs/db-tables.md](docs/db-tables.md) | Database tables |
 | [docs/api-changelog.md](docs/api-changelog.md) | API change log |
-| [scripts/README.md](scripts/README.md) | Operations and deployment scripts |
 
 Most documents are written in Korean; the Swagger UI (`/docs`) is the API reference and is self-describing.
 
 ## Related repositories
 
-- [carepong-app](https://github.com/asiae-girls-2026/carepong-app) — Electron desktop app
-- [carepong-automation](https://github.com/asiae-girls-2026/carepong-automation) — keyboard personalization (shrinkage) baseline refresh
+- [carepong-app](https://github.com/asiae-girls-2026/carepong-app) — Electron desktop app (client). Installers are on that repository's Releases tab
+- [carepong-automation](https://github.com/asiae-girls-2026/carepong-automation) — keyboard personalization (shrinkage) baseline refresh. To be merged into this repository
 
 ## Contributing, security, license
 
