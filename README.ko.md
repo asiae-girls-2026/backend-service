@@ -39,7 +39,7 @@ Electron 앱 ─ALB─▶ api (FastAPI) ─▶ model (FastAPI, 과부하 추론)
 | PostgreSQL 16 | 유일하게 지원하는 DB. ORM 없이 SQL 을 직접 쓰며(`api/app/services/db.py`), DDL 은 `api/migrations/*.sql` 에 있고 api 기동 시 자동 적용된다 |
 | AWS 계정 (선택) | Bedrock(공감 챗·복약 파싱), Lambda(DDI), S3(raw). 없으면 해당 기능만 503 |
 
-돌려 본 환경: Windows 11(개발, Docker Desktop) · Ubuntu EC2 **t3.micro**(api) + **t3.small**(model) + RDS **db.t4g.micro**(운영, 사용자 약 80명·1분 창 40만 건).
+돌려 본 환경: Windows 11(개발, Docker Desktop) · Ubuntu EC2 **t3.micro**(api) + **t3.small**(model) + RDS **db.t4g.micro**(운영, 내부 베타 약 30명·1분 창 약 40만 건).
 
 ## 빨리 켜 보기
 
