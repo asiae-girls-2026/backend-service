@@ -119,7 +119,7 @@ PostgreSQL 16 (Amazon RDS). 이 저장소의 `api/migrations/001~008` 이 테이
 
 ## 배포 (EC2 수동)
 
-CI 는 테스트까지만 돈다. 배포는 사람이 EC2 콘솔에서 한 줄 붙여넣기로 한다(`scripts/*_paste.txt`, 메모장으로 열어 전체 복사).
+CI 는 테스트까지만 돈다. 배포는 사람이 EC2 콘솔에서 한 줄 붙여넣기로 한다(`scripts/*_paste.txt`, 메모장으로 열어 전체 복사. 스크립트 표는 아래 "운영 점검·배포 스크립트").
 
 1. `scripts/inspect_ec2_git_paste.txt` — EC2 체크아웃과 origin/main 차이 확인
 2. `scripts/deploy_api_paste.txt` — `git merge origin/main` → `docker compose … up -d --build --force-recreate api` → `/health`. 실패 시 자동 `merge --abort`
@@ -127,6 +127,46 @@ CI 는 테스트까지만 돈다. 배포는 사람이 EC2 콘솔에서 한 줄 �
 4. 배포 뒤 `scripts/verify_kbd_hook_paste.txt`(개인화 훅 가동) · `scripts/smoke.py <ALB 주소>`(8개 스모크)
 
 `.env` 변경(ARN·키)은 `--force-recreate` 가 있어야 반영된다. 워커는 1개(팝업 상태가 메모리) — 배포는 **08:30 전**이나 18:30 후.
+
+## 모델 서버 (model/)
+
+FastAPI 컨테이너 1개(ML EC2 :8001). `predict.py` 는 **ML 담당 제공 파일 그대로**(model_v1.json 내장, 표준 라이브러리만). 모델 교체 = `predict.py` 교체 + `MODEL_VERSION` 환경변수 올림 + 재빌드.
+
+| 주소 | 내용 |
+|---|---|
+| `GET /health` | `model_version` · `features`(16) · `cut_report`/`cut_intervene`(ML 컷) · `standardized_input: true` |
+| `POST /predict` | `{features: {16피처}, standardized: false}` → `score`(소수 1자리)·`prob`·`level`·`imputed`·`model_version` |
+
+- `standardized: true` 면 features 가 이미 표준화된 z-벡터(api 의 `kbd_personalize`, 11/6) — 내장 스케일러를 건너뛰고 계수에 바로 적용. 누락값은 0(=평균) 대치.
+- 활동 0 창은 모델을 거치지 않고 `null` (api 가 처리).
+- api 는 `/health` 에 `standardized_input` 이 없으면 원시 피처로 자동 폴백하므로, 옛 모델 컨테이너와도 호환된다.
+
+테스트: `pytest` — `tests/validation_samples.json` 5건(ML 원본 함수 출력)과 동일한지. 모델 자체 설명은 ML 인계서(10/13)·carepong-automation.
+
+## 운영 점검·배포 스크립트 (scripts/)
+
+`*_paste.txt` 는 **EC2 콘솔(또는 SSH)에 한 줄 전체를 붙여넣는** 용도다. 메모장으로 열어 Ctrl+A → Ctrl+C. dash 셸 기준(배시 전용 문법 없음), api 컨테이너 이름 `infra-api-1`.
+`*.py` 는 로컬 또는 컨테이너 안에서 `python` 으로 실행. 전부 **읽기만** 한다(배포 스크립트 제외).
+
+| 파일 | 어디서 | 하는 일 |
+|---|---|---|
+| `smoke.py <ALB 주소>` | 로컬 (표준 라이브러리만) | 헬스·설정·등록·ML 샘플 추론(74.1)·활동0·멱등·라벨·이벤트 배치 8개 검사 |
+| `inspect_ec2_git_paste.txt` | EC2 | EC2 체크아웃 ↔ origin/main 커밋 차이, 변경 파일 |
+| `deploy_api_paste.txt` | EC2 | `git merge origin/main` → api 컨테이너 재빌드 → `/health`·로그. 실패 시 `merge --abort` |
+| `deploy_api_with_model_check_paste.txt` | EC2 | 위 + 개인화 훅 모듈 로드·모델 `/health`(standardized_input) 확인 |
+| `verify_kbd_hook_paste.txt` | EC2 | 최근 창의 `model_version` 분포(`v1` vs `v1+kbd`)·모델 health |
+| `kbd_score_sanity_paste.txt` | EC2 | 사용자별 `+kbd` 점수 분포 (개인화가 이상치를 만들지 않는지) |
+| `ml_ec2_model_update_paste.txt` | ML EC2 | 모델 컨테이너·코드 위치·`/health` 확인 (재빌드 전) |
+| `automation_check_paste.txt` ~ `check5` | EC2 | 2차 자동화 연결 점검: 기준선 테이블·cron 04:00·모델 로그·시간대 |
+| `uninstall_check.py` · `uninstall_check_paste.txt` | EC2 (컨테이너 안) | 10/27 삭제 조치 뒤 잔존 접속 PC 점검. `SINCE`·`TEAM`(팀원 CP, 쉼표 구분) 환경변수 |
+| `hourly_ids_paste.txt` | EC2 | 시간대별 접속 사용자 수 |
+| `rds_tables_paste.txt` | EC2 | RDS 테이블 목록·행수 추정(`pg_stat_user_tables`) — DB 스키마 정리본 근거 |
+| `verify_f04_error_json_paste.txt` | EC2 | 복약 LUI 오류 JSON(F04, PR #3) 배포 반영 여부 |
+| `archive/2026-10_beta/` | — | 1차 베타(10/7~10/23) 수집 현황·QA 시트 8번·가설 S1~S4 검증. 다시 쓸 일 없음 |
+
+Data 담당 소유: `ddi_backend_qa.py`, `verify_ddi_sections.py`, `carepong_gold/export_rds.py` — 설명은 `ddi/README.md`.
+
+점검 **결과 파일**(사용자 CP·접속 시각 포함)은 저장소에 올리지 않는다 → 팀 드라이브 `final_docs/삭제조치_1027_점검결과/`.
 
 ## 관련 저장소
 
