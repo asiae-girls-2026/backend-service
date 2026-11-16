@@ -1,6 +1,7 @@
 """생체 층 PPG — 틀만. 1차 제외(10/1). 2차: 과부하 팝업 [예] 시 QR, 하루 최대 2회 (연우 시트3).
 DA 데모 흐름: 과부하 팝업 → QR(ID 포함, 하루 2회) → 폰 측정 웹 30초 → HRV 4피처 → 판정.
-지금 측정 웹(Vercel)·서버(Render)·구글 시트는 DA 소유. 붙일 때 결정: 그대로 두고 결과만 받을지, 우리 서버로 흡수할지."""
+지금 측정 웹(Vercel)·서버(Render)·구글 시트는 DA 소유. 붙일 때 결정: 그대로 두고 결과만 받을지, 우리 서버로 흡수할지.
+(11/13) 결정됨 — PPG 는 Render/Vercel 이 RDS(ppg_measure·ppg_personal_baseline)·S3 에 직결, 백엔드를 거치지 않는다(10/27). 이 라우터는 미사용 스텁이며 지워도 앱 영향 없음."""
 from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter

@@ -1,71 +1,93 @@
-# 케어퐁 backend-service
+# CarePong backend-service
 
-Windows 데스크톱 케어펫 **케어퐁(CarePong)** 의 서버. 1차 베타 10/7 → 2차 10/26.
-구조: `api`(FastAPI 메인) · `model`(FastAPI 추론, DA 모델) · `collector`(입력 수집기, Electron 자식 프로세스) · `infra`(Docker Compose·Caddy).
+**English** | [한국어](README.ko.md)
 
-## 폴더
+[![test](https://github.com/asiae-girls-2026/backend-service/actions/workflows/test.yml/badge.svg)](https://github.com/asiae-girls-2026/backend-service/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
 
-```
-backend-service/
-├ api/           메인 API. app/routers/ 화면별 주소, app/services/policy.py 팝업 정책, services/db.py, migrations/*.sql, tests/
-├ model/         추론 서버. predict.py = ML 관련 파일 (model_v1.json 내장). tests/validation_samples.json 5건으로 검증
-├ collector/     pynput 전역 후킹 → 1분 피처 16개 → JSON stdout. PyInstaller 로 exe
-├ infra/         docker-compose.yml(api·model·db) + docker-compose.aws.yml
-└ docs/          api-changelog.md · db-tables.md · client/(앱 전달물)
-```
+**CarePong** is a desktop care-pet for Windows. It infers cognitive overload from keyboard and mouse usage patterns (16 per-minute aggregate features; typed text and window titles are never collected), nudges the user to take a break, and offers medication reminders, natural-language medication registration and an empathy chat.
+This repository is the **server side**. The desktop app lives in [carepong-app](https://github.com/asiae-girls-2026/carepong-app).
 
-## 켜기
+> A student team project (Sep–Nov 2026), published for learning and reuse. It is not operated as a public service.
+
+## Architecture
 
 ```
+Electron app ─ALB─▶ api (FastAPI) ─▶ model (FastAPI, overload inference)
+                      ├──▶ PostgreSQL 16 (RDS)
+                      ├──▶ Amazon Bedrock   empathy chat · medication NL parsing
+                      ├──▶ AWS Lambda       drug–drug interaction (DDI) check
+                      └──▶ S3               input-dynamics batches (for model retraining)
+```
+
+| Folder | Contents |
+|---|---|
+| `api/` | Main API — sensing, popup policy, medication, empathy chat, medication LUI. `migrations/` are applied on startup |
+| `model/` | Overload inference server. Accepts standardized (personalized) input |
+| `collector/` | Input collector (pynput). Emits 16 per-minute features as JSON; shipped with the app as an exe |
+| `infra/` | Docker Compose (local + AWS override), DDI policy SQL |
+| `etl/` `lambda/` `deploy/` | Drug/supplement ingestion, DUR/DDI rule pipeline (Prefect), DDI Lambda, systemd units |
+| `scripts/` `docs/` | Operations scripts, documentation |
+
+## Requirements
+
+| What | Version / notes |
+|---|---|
+| Docker + Docker Compose v2 | Recommended. Brings up api, model and PostgreSQL in one command |
+| Python 3.12 | For running without Docker. Dependencies in `api/requirements.txt` (FastAPI, psycopg3, boto3) |
+| PostgreSQL 16 | The only supported database. Plain SQL, no ORM (`api/app/services/db.py`). DDL lives in `api/migrations/*.sql` and is applied automatically when the api starts |
+| AWS account (optional) | Bedrock (empathy chat, medication parsing), Lambda (DDI), S3 (raw batches). Without it those features return errors and everything else works |
+
+Tested on: Windows 11 (development, Docker Desktop) · Ubuntu on EC2 **t3.micro** (api) + **t3.small** (model) + RDS **db.t4g.micro** (production, internal beta of ~30 users, ~400k one-minute windows).
+
+## Quick start
+
+```bash
+git clone https://github.com/asiae-girls-2026/backend-service.git && cd backend-service
+cp .env.example .env            # empty values are fine (local postgres + model containers)
 docker compose -f infra/docker-compose.yml up --build
 ```
 
-| 주소 | 보이는 것 |
+- Swagger: http://localhost:8000/docs · API health: http://localhost:8000/health · model health: http://localhost:8001/health
+- Tests: `cd api && pytest` · `cd model && pytest`
+- Bedrock, Lambda and S3 features need AWS credentials. Without them empathy chat and medication parsing answer 503, the DDI check 502 and raw upload fails; sensing, medication schedules and pet backup keep working.
+- Without Docker: `cd api && pip install -r requirements.txt && uvicorn app.main:app --reload` (set `DATABASE_URL`; with no DB the api runs without persistence).
+
+## Configuration
+
+| To change | Edit |
 |---|---|
-| http://localhost:8000/docs | Swagger |
-| http://localhost:8000/health | `{"ok": true}` |
-| http://localhost:8001/health | 모델 컨테이너 (model_version·컷) |
+| DB URL, model URL, AWS keys/ARN, daily chat limit | `.env` (see `.env.example`) |
+| Ports, containers, AWS override | `infra/docker-compose.yml`, `infra/docker-compose.aws.yml` |
+| Overload popup policy (cut 63, 20 of 30 min, 1-hour gap, 5–8/day, fixed slots) | constants at the top of `api/app/services/policy.py` |
+| Policy values served to the app (`GET /v1/config`) | `api/app/routers/config.py` |
+| Swap the inference model | replace `model/predict.py`, bump `MODEL_VERSION` |
+| Add or change tables | add `api/migrations/NNN_*.sql` (applied in filename order, recorded in `schema_migrations`) |
+| Collector features, window length | `collector/collector.py` (`--window` seconds) |
 
-켜지면 api 가 `migrations/*.sql` 을 자동 적용해 테이블 12개를 만든다 (설계: `docs/db-tables.md`). `DATABASE_URL` 이 없거나 DB 가 안 뜨면 **저장 없이** 동작한다(로그에 경고).
+## Deployment (how we ran it)
 
-Docker 없이: `cd api && pip install -r requirements.txt && uvicorn app.main:app --reload`
-테스트: `cd api && pytest` / `cd model && pytest` / `cd collector && pytest`
-DB 통합 테스트: compose 켠 뒤 `DATABASE_URL=postgresql://carepong:carepong@localhost:5432/carepong pytest api/tests/test_db.py`
+One EC2 instance runs only the api container via `docker compose -f infra/docker-compose.yml -f infra/docker-compose.aws.yml up -d --build api`; the model runs on a second EC2, the database is RDS, an ALB sits in front. CI runs tests only; deployment is a manual paste of `scripts/deploy_api_paste.txt` into the EC2 console. Details in [docs/operations.md](docs/operations.md).
 
-## 데이터 흐름 (10/2 확정)
+## Documentation
 
-| 길 | 주기 | 주소 | 비고 |
-|---|---|---|---|
-| 감지 피처 16개 | **1분마다 실시간** (08:30~18:30, 활동 0 창 포함) | `POST /v1/windows` | 서버 추론 → `condition_score`·`prompt`·`prompt_type` 회신. 활동 0 창은 null |
-| 팝업 응답·체크인 | 즉시 | `POST /v1/self-reports` | `window_id` 로 예측과 짝. yesno + 1~5 |
-| 이벤트(채원 마커 표) | **매일 08:30 또는 앱 시작 시** 묶음 | `POST /v1/events/batch` | 로컬 적재 → `accepted_ids` 만 삭제. 일 집계는 서버가 산출 |
-| 설정·펫·약 백업 | 바뀔 때 | `/v1/routines` `/v1/pet` `/v1/medications` | 원본은 앱 로컬 |
+| Document | Contents |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | Diagram, the path of one request, deployment units (Korean) |
+| [docs/operations.md](docs/operations.md) | Environment variables, data flows, all 44 endpoints, DB, EC2 deployment, model server, operations scripts, rules (Korean) |
+| [docs/medication-phase2-api.md](docs/medication-phase2-api.md) | Medication API reference |
+| [docs/DDI_Sections_Frontend_Contract.md](docs/DDI_Sections_Frontend_Contract.md) · [docs/ddi/](docs/ddi/) | DDI result format and rule pipeline |
+| [docs/db-tables.md](docs/db-tables.md) | Database tables |
+| [docs/api-changelog.md](docs/api-changelog.md) | API change log |
 
-서버가 "띄울지" 판단하는 팝업은 **과부하 확인 하나**(혜윤 DA 명세 3_동작규칙: 과부하 1순위 · 고정 보충 11:30/14/15:30/17 · 1시간 텀 · 하루 5~8회, `services/policy.py`). 복약·물·스트레칭·휴식 알림과 정기 체크인은 앱이 띄우고 서버는 기록만 받는다. 완화 보상 상한(3회·30분)도 앱.
+Most documents are written in Korean; the Swagger UI (`/docs`) is the API reference and is self-describing.
 
-## 엔드포인트 — 1차 [Stub] 15
+## Related repositories
 
-| 메서드 | 주소 | 용도 |
-|---|---|---|
-| GET | /health | 생존 |
-| POST | /v1/enroll | 앱이 만든 CP 번호 등록 → 토큰 |
-| POST | /v1/windows · /v1/windows/batch | 1분 창 → 추론 → 팝업 여부 (배치 ≤240, 팝업 없음) |
-| POST | /v1/self-reports | 팝업 응답(예/아니오·1~5)·체크인 |
-| POST | /v1/events/batch | 이벤트 묶음 (이벤트명은 채원 마커 표 고정) |
-| GET/POST/PUT/DELETE | /v1/medications[/{id}] | 설정 안 약 등록 관리 |
-| GET/PUT | /v1/routines | 알람 간격·방해금지(18:30~08:30)·펫 투명도 |
-| GET/PUT | /v1/pet | 펫 백업 (캐릭터 슬롯·레벨·하트·방꾸미기) |
-| GET | /v1/config | 정책값 (컷·상한·방해금지·간격 기본값) |
+- [carepong-app](https://github.com/asiae-girls-2026/carepong-app) — Electron desktop app (client). Installers are on that repository's Releases tab
+- [carepong-automation](https://github.com/asiae-girls-2026/carepong-automation) — keyboard personalization (shrinkage) baseline refresh. To be merged into this repository
 
-2차 [Planned] 12: `/pet/actions` `/medications/{id}/logs` `/routines/logs` `/relief-sessions`(이벤트로 대체) · `/usage/daily`(GET, 서버 집계) · `/drugs/search` `/supplements/search` · `/telegram/*` · `/ppg/*`
+## Contributing, security, license
 
-
-## 규칙
-
-- 앱이 보내는 기록엔 전부 `client_event_id`. 재전송돼도 한 번만 기록
-- 시각은 앱 시계(KST, ISO)로. 서버는 받은 시각을 따로 적는다
-- 무응답(`timeout`)을 미복용으로 치지 않는다
-- 주소·필드·이벤트명 바꾸려면 팀에 말하고 같이 바꾼다 (채원 마커 표·대시보드가 이름을 본다)
-- 원시 키 코드·텍스트·창 제목은 어디에도 넣지 않는다
-- 팝업 상태가 메모리에 있으므로 DB 이관(user_prompt_state) 전엔 **워커 1개, 배포는 08:30 전**
-
+[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) · [MIT License](LICENSE)

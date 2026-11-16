@@ -1,13 +1,13 @@
 # collector — 입력 수집기 (헤드리스)
 
 DA `pillymon.py` 의 수집·집계 부분만 분리. GUI·팝업·판정 없음. 1분마다 판정 피처 16개를 JSON 한 줄로 출력한다 (저장용 14개·ko_ratio 없음 — 혜윤 10/2). 활동 0 창도 그대로 출력.
-최종적으로는 **desktop-client 저장소의 `resources/collector.exe`** 로 동봉된다 (여기선 개발·검증용).
+최종적으로는 **carepong-app 저장소의 `resources/collector.exe`** 로 동봉된다 (여기선 개발·검증용). 10/27 이후 수집기 소스 정본은 정화·연우 PC 의 빌드본.
 
 ## 출력 (stdout, 1줄 = 1창)
 ```json
 {"window_start":"2026-10-07T09:31:00+09:00","window_sec":60,"features":{"SnKeyStrokes":142,...,"SnMouseDistance":5120.5}}
 ```
-Electron 은 이 줄을 읽어 `docs/client/api.js` 의 `postWindow()` 로 보낸다 (window_id·session_id·dnd 는 Electron 이 붙임). 08:30~18:30 에만 켠다.
+Electron 은 이 줄을 읽어 carepong-app `app/src/main/api.ts` 의 `postWindow()` 로 보낸다 (window_id·session_id·dnd 는 Electron 이 붙임). 08:30~18:30 에만 켠다.
 
 ## 실행
 ```

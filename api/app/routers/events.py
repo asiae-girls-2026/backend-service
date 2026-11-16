@@ -44,7 +44,7 @@ class BatchOut(BaseModel):
     accepted_ids: list[str] = Field(..., description="저장된 client_event_id — 앱은 이것만 로컬 큐에서 지움")
     rejected_ids: list[str] = Field(default_factory=list, description="거절된 ID (이벤트명 미등록 등)")
 
-@router.post("/events/batch", response_model=BatchOut, summary="[Stub] 이벤트 일 1회 묶음 전송 (08:30 또는 앱 시작 시) — 중복 ID 무시")
+@router.post("/events/batch", response_model=BatchOut, summary="이벤트 일 1회 묶음 전송 (08:30 또는 앱 시작 시) — 중복 ID 무시")
 def batch(body: BatchIn, x_user_id: str = Header("dev")):
     ok, bad = [], []
     for e in body.events:

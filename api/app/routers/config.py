@@ -38,6 +38,6 @@ class AppConfig(BaseModel):
     prompt_text: str = Field("지금 스트레스를 받고 계신가요?", description="팝업 문구 (Q07 명명·Q08 문구 결정 전 임시)")
     question_version: str = Field("q1")
 
-@router.get("/config", response_model=AppConfig, summary="[Stub] 앱 시작 시 정책값 다운로드")
+@router.get("/config", response_model=AppConfig, summary="앱 시작 시 정책값 다운로드")
 def get_config():
     return AppConfig()

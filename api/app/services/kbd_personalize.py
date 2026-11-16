@@ -122,6 +122,6 @@ def get_personalized_features(user_id, feats_30min=None, conn=None, k=None):
 
 if __name__ == "__main__":
     import sys
-    uid = sys.argv[1] if len(sys.argv) > 1 else "CP-33948A80"
+    uid = sys.argv[1] if len(sys.argv) > 1 else "CP-EXAMPLE1"
     v = get_personalized_features(uid)
     print(f"{uid}: {'개인화 벡터 ' + str([round(z,2) for z in v]) if v else '데이터 없음/coldstart'}")
