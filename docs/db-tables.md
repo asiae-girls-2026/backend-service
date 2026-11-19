@@ -48,7 +48,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | app_version | varchar(16) |  | Y |  |
 
 ### windows (1차)
-1분 창 피처 16개 + 서버 추론 결과 + 팝업 판단. 라벨·완화의 매칭 키. 혜윤 DB설계: (user_id, window_start) 복합 인덱스 ★ / raw_url = S3 포인터(1차~2차). 활동 0 창도 저장(점수 null)
+1분 창 피처 16개 + 서버 추론 결과 + 팝업 판단. 라벨·완화의 매칭 키. 혜윤 DB설계: (user_id, window_start) 복합 인덱스 ★ / raw_url = S3 포인터(1차\~2차). 활동 0 창도 저장(점수 null)
 
 | 컬럼 | 타입 | key | null | 설명 |
 |---|---|---|---|---|
@@ -61,7 +61,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | activity_zero | boolean |  | N | SnKeyStrokes+SnMouseAct == 0 |
 | dnd | boolean |  | N | 방해금지 중 |
 | app_tab | varchar(12) |  | Y | 그 1분 동안 있던 우리 앱 화면 pet/mind/archive/settings (채원 app_category). 002 마이그레이션 |
-| condition_score | numeric(4,1) |  | Y | 0~100.0. 활동0·모델실패 null |
+| condition_score | numeric(4,1) |  | Y | 0\~100.0. 활동0·모델실패 null |
 | prob | numeric(6,4) |  | Y | isotonic 보정 확률 |
 | level | varchar(10) |  | Y | normal/observe/intervene |
 | model_version | varchar(16) |  | Y | v1 |
@@ -81,7 +81,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | window_id | varchar(64) | FK windows | Y | 팝업 띄운 창. 체크인은 null |
 | trigger | varchar(10) |  | N | morning/spike/random/checkin |
 | yesno | smallint |  | Y | 1 예 / 0 아니요 / null 무응답 |
-| level_1to5 | smallint |  | Y | [예] 후 1~5 |
+| level_1to5 | smallint |  | Y | [예] 후 1\~5 |
 | status | varchar(10) |  | N | answered/dismissed/ignored/pending |
 | prompt_time | timestamptz |  | Y | 팝업 뜬 시각 |
 | clicked_at | timestamptz |  | Y | 클릭 시각 |
@@ -100,7 +100,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | user_id | uuid | FK users | N |  |
 | client_event_id | varchar(64) | UQ | N | 멱등키 — 재전송 무시 |
 | event | varchar(40) | IDX | N | 허용 목록 29종 (events.py EVENTS_1ST) |
-| screen | varchar(8) |  | Y | P01~P08, M01~M07 |
+| screen | varchar(8) |  | Y | P01\~P08, M01\~M07 |
 | occurred_at | timestamptz | IDX | N | 앱 시계 (KST) |
 | props | jsonb |  | N | 마커 표 props 그대로 |
 | app_version | varchar(16) |  | N |  |
@@ -118,7 +118,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | walks_refused | int |  | N |  |
 | chat_messages | int |  | N | 상한 없음 |
 | mood_checks | int |  | N |  |
-| hearts_filled | smallint |  | N | 0~10 = min(chat_messages,10) |
+| hearts_filled | smallint |  | N | 0\~10 = min(chat_messages,10) |
 | med_taken | int |  | N |  |
 | med_missed | int |  | N | timeout/스누즈 후 미복용 |
 | water_count | int |  | N |  |
@@ -129,8 +129,8 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | relief_completed | int |  | N | relief_completed 이벤트 |
 | pet_level | smallint |  | Y | pet_state 스냅샷 |
 | pet_generation | smallint |  | Y |  |
-| furniture_unlocked | smallint |  | Y | 0~9 |
-| days_to_next_character | int |  | Y | 캐릭터 시작~Lv5 |
+| furniture_unlocked | smallint |  | Y | 0\~9 |
+| days_to_next_character | int |  | Y | 캐릭터 시작\~Lv5 |
 | active_minutes | int |  | N | 앱 포그라운드 분 (heartbeat 기반) |
 | collector_active_min | int |  | N | 수집기 창 수 (활동0 포함) — 혜윤 구분 제안. 결손률 = 1 − 창수/활성분 |
 | prompts_shown | smallint |  | N | 서버 팝업 수 (windows.prompt_type≠none) |
@@ -170,15 +170,15 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 |---|---|---|---|---|
 | user_id | uuid | PK·FK users | N |  |
 | name | varchar(12) |  | N |  |
-| character_slot | smallint |  | N | 1~3 |
+| character_slot | smallint |  | N | 1\~3 |
 | generation | smallint |  | N | N번째 친구 |
-| level | smallint |  | N | 1~5 |
+| level | smallint |  | N | 1\~5 |
 | xp | int |  | N |  |
 | happiness | smallint |  | N |  |
 | health | smallint |  | N |  |
 | energy | smallint |  | N |  |
 | hearts_total | int |  | N | 누적 하트 |
-| furniture_stage | smallint |  | N | 0~9 |
+| furniture_stage | smallint |  | N | 0\~9 |
 | updated_at | timestamptz |  | N | 앱 시계 |
 
 ### routine_settings (1차)
@@ -194,7 +194,7 @@ PostgreSQL 16. 근거: 혜윤 DB설계·API명세, 채원 마커 표 v0.6, 연�
 | dnd_schedule_enabled | boolean |  | N | true |
 | dnd_start | time |  | N | 18:30 |
 | dnd_end | time |  | N | 08:30 |
-| pet_opacity | smallint |  | N | 20~100 |
+| pet_opacity | smallint |  | N | 20\~100 |
 | pet_motion_minimal | boolean |  | N |  |
 | updated_at | timestamptz |  | N |  |
 

@@ -77,7 +77,7 @@ PPG 측정(폰) ─▶ Vercel 측정 웹 → Render 서버 ─▶ RDS/S3 직결 
 
 | 길 | 주기 | 주소 | 비고 |
 |---|---|---|---|
-| 감지 피처 16개 | **1분마다** (08:30~18:30, 활동 0 창 포함) | `POST /v1/windows` | 서버 추론 → `condition_score`·`prompt`·`prompt_type`. 11/6부터 직전 30분 창이 있으면 **개인화 z-벡터**(shrinkage, carepong-automation)로 판정하고 `model_version` 에 `+kbd` 접미 |
+| 감지 피처 16개 | **1분마다** (08:30\~18:30, 활동 0 창 포함) | `POST /v1/windows` | 서버 추론 → `condition_score`·`prompt`·`prompt_type`. 11/6부터 직전 30분 창이 있으면 **개인화 z-벡터**(shrinkage, carepong-automation)로 판정하고 `model_version` 에 `+kbd` 접미 |
 | 팝업 응답·체크인 | 즉시 | `POST /v1/self-reports` | `window_id` 로 예측과 짝 |
 | 이벤트(마커 표) | 매일 08:30 또는 앱 시작 시 묶음 | `POST /v1/events/batch` | `client_event_id` 멱등 |
 | 공감챗 | 메시지마다 | `POST /v1/chat` | Bedrock 프롬프트 v3, 원문 저장 없음, 하루 상한 |
@@ -86,7 +86,7 @@ PPG 측정(폰) ─▶ Vercel 측정 웹 → Render 서버 ─▶ RDS/S3 직결 
 | 입력 다이내믹스 배치 | 수집기 파일 단위 | `/v1/raw/batches` | gzip 배치를 검증(sha256·크기)해 S3 보관. ML 재학습용 |
 | 설정·펫 | 바뀔 때 | `/v1/routines` `/v1/pet` | 메모리 스텁. 원본은 앱 로컬 |
 
-서버가 "띄울지" 판단하는 팝업은 **과부하 확인 하나**(`services/policy.py`: 과부하 1순위 · 고정 보충 11:30/14/15:30/17 · 1시간 텀 · 하루 5~8회). 복약·물·스트레칭·휴식 알림과 정기 체크인은 앱이 띄우고 서버는 기록만 받는다.
+서버가 "띄울지" 판단하는 팝업은 **과부하 확인 하나**(`services/policy.py`: 과부하 1순위 · 고정 보충 11:30/14/15:30/17 · 1시간 텀 · 하루 5\~8회). 복약·물·스트레칭·휴식 알림과 정기 체크인은 앱이 띄우고 서버는 기록만 받는다.
 
 ## 엔드포인트 (44개 = 구현 23 · 메모리 스텁 4 · Planned 17)
 
@@ -157,12 +157,12 @@ FastAPI 컨테이너 1개(ML EC2 :8001). `predict.py` 는 **ML 담당 제공 파
 | `verify_kbd_hook_paste.txt` | EC2 | 최근 창의 `model_version` 분포(`v1` vs `v1+kbd`)·모델 health |
 | `kbd_score_sanity_paste.txt` | EC2 | 사용자별 `+kbd` 점수 분포 (개인화가 이상치를 만들지 않는지) |
 | `ml_ec2_model_update_paste.txt` | ML EC2 | 모델 컨테이너·코드 위치·`/health` 확인 (재빌드 전) |
-| `automation_check_paste.txt` ~ `check5` | EC2 | 2차 자동화 연결 점검: 기준선 테이블·cron 04:00·모델 로그·시간대 |
+| `automation_check_paste.txt` \~ `check5` | EC2 | 2차 자동화 연결 점검: 기준선 테이블·cron 04:00·모델 로그·시간대 |
 | `uninstall_check.py` · `uninstall_check_paste.txt` | EC2 (컨테이너 안) | 10/27 삭제 조치 뒤 잔존 접속 PC 점검. `SINCE`·`TEAM`(팀원 CP, 쉼표 구분) 환경변수 |
 | `hourly_ids_paste.txt` | EC2 | 시간대별 접속 사용자 수 |
 | `rds_tables_paste.txt` | EC2 | RDS 테이블 목록·행수 추정(`pg_stat_user_tables`) — DB 스키마 정리본 근거 |
 | `verify_f04_error_json_paste.txt` | EC2 | 복약 LUI 오류 JSON(F04, PR #3) 배포 반영 여부 |
-| `archive/2026-10_beta/` | — | 1차 베타(10/7~10/23) 수집 현황·QA 시트 8번·가설 S1~S4 검증. 다시 쓸 일 없음 |
+| `archive/2026-10_beta/` | — | 1차 베타(10/7\~10/23) 수집 현황·QA 시트 8번·가설 S1\~S4 검증. 다시 쓸 일 없음 |
 
 Data 담당 소유: `ddi_backend_qa.py`, `verify_ddi_sections.py`, `carepong_gold/export_rds.py` — 설명은 `ddi/README.md`.
 

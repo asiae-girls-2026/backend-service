@@ -39,7 +39,7 @@ Electron app ─ALB─▶ api (FastAPI) ─▶ model (FastAPI, overload inferenc
 | PostgreSQL 16 | The only supported database. Plain SQL, no ORM (`api/app/services/db.py`). DDL lives in `api/migrations/*.sql` and is applied automatically when the api starts |
 | AWS account (optional) | Bedrock (empathy chat, medication parsing), Lambda (DDI), S3 (raw batches). Without it those features return errors and everything else works |
 
-Tested on: Windows 11 (development, Docker Desktop) · Ubuntu on EC2 **t3.micro** (api) + **t3.small** (model) + RDS **db.t4g.micro** (production, internal beta of ~30 users, ~400k one-minute windows).
+Tested on: Windows 11 (development, Docker Desktop) · Ubuntu on EC2 **t3.micro** (api) + **t3.small** (model) + RDS **db.t4g.micro** (production, internal beta of \~30 users, \~400k one-minute windows).
 
 ## Quick start
 
